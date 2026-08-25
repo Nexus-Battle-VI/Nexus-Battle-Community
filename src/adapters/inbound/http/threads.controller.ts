@@ -10,7 +10,7 @@ import {
   Param,
   Post,
 } from '@nestjs/common'
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 
 import { DomainError } from '../../../domain/errors/DomainError'
 import { ThreadNotFoundError } from '../../../application/errors/ApplicationError'
@@ -31,12 +31,14 @@ import {
   PUBLISH_POST,
 } from './tokens'
 import {
-  ModerateRequest,
   OpenThreadRequest,
   PublishPostRequest,
   ThreadResponse,
   ThreadSummaryResponse,
 } from './threads.dto'
+
+import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
+import { CurrentIdentity, Public, Roles } from './auth/decorators'
 
 /**
  * Adaptador de entrada HTTP.
@@ -46,6 +48,7 @@ import {
  * ocultacion por moderacion viven en el dominio.
  */
 @ApiTags('threads')
+@ApiBearerAuth()
 @Controller('threads')
 export class ThreadsController {
   constructor(
@@ -62,14 +65,19 @@ export class ThreadsController {
   @ApiOperation({ summary: 'Abre un hilo nuevo' })
   @ApiResponse({ status: 201, description: 'Hilo abierto', type: ThreadResponse })
   @ApiResponse({ status: 400, description: 'Datos invalidos' })
-  async open(@Body() body: OpenThreadRequest): Promise<ThreadResponse> {
+  async open(
+    @Body() body: OpenThreadRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+  ): Promise<ThreadResponse> {
     try {
-      return await this.openThread.execute(body)
+      // El autor NO se lee del cuerpo: sale del testimonio verificado.
+      return await this.openThread.execute({ title: body.title, authorId: identity.subject })
     } catch (error: unknown) {
       throw ThreadsController.translate(error)
     }
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Lista los hilos' })
   @ApiResponse({ status: 200, type: ThreadSummaryResponse, isArray: true })
@@ -77,6 +85,7 @@ export class ThreadsController {
     return await this.listThreads.execute()
   }
 
+  @Public()
   @Get(':threadId')
   @ApiOperation({ summary: 'Recupera un hilo con sus mensajes visibles' })
   @ApiResponse({ status: 200, description: 'Hilo encontrado', type: ThreadResponse })
@@ -98,11 +107,12 @@ export class ThreadsController {
   async post(
     @Param('threadId') threadId: string,
     @Body() body: PublishPostRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
   ): Promise<ThreadResponse> {
     try {
       return await this.publishPost.execute({
         threadId,
-        authorId: body.authorId,
+        authorId: identity.subject,
         content: body.content,
       })
     } catch (error: unknown) {
@@ -110,6 +120,9 @@ export class ThreadsController {
     }
   }
 
+  // Ocultar exige rol de moderacion. Antes bastaba con enviar un `moderatorId`
+  // en el cuerpo: cualquiera podia ocultar cualquier mensaje.
+  @Roles(Role.Moderator, Role.Administrator)
   @Post(':threadId/posts/:postId/hiding')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Oculta un mensaje por moderacion' })
@@ -119,15 +132,16 @@ export class ThreadsController {
   async hide(
     @Param('threadId') threadId: string,
     @Param('postId') postId: string,
-    @Body() body: ModerateRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
   ): Promise<ThreadResponse> {
     try {
-      return await this.hidePost.execute({ threadId, postId, moderatorId: body.moderatorId })
+      return await this.hidePost.execute({ threadId, postId, moderatorId: identity.subject })
     } catch (error: unknown) {
       throw ThreadsController.translate(error)
     }
   }
 
+  @Roles(Role.Moderator, Role.Administrator)
   @Post(':threadId/closure')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cierra el hilo' })
@@ -136,10 +150,10 @@ export class ThreadsController {
   @ApiResponse({ status: 404, description: 'El hilo no existe' })
   async close(
     @Param('threadId') threadId: string,
-    @Body() body: ModerateRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
   ): Promise<ThreadResponse> {
     try {
-      return await this.closeThread.execute(threadId, body.moderatorId)
+      return await this.closeThread.execute(threadId, identity.subject)
     } catch (error: unknown) {
       throw ThreadsController.translate(error)
     }

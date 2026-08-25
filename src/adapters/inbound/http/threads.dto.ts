@@ -1,35 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger'
 import { IsString, Length } from 'class-validator'
 
+/**
+ * Ninguna peticion declara quien la realiza.
+ *
+ * `authorId` y `moderatorId` estuvieron aqui y se han retirado: eran datos que
+ * el cliente afirmaba. Cualquiera podia publicar en nombre de otra persona, u
+ * ocultar un mensaje declarandose moderador. Ahora salen del `sub` del
+ * testimonio verificado.
+ *
+ * Con `forbidNonWhitelisted`, enviarlos ahora produce 400: el intento de
+ * suplantacion se rechaza de forma ruidosa en lugar de aceptarse en silencio.
+ */
+
 export class OpenThreadRequest {
   @ApiProperty({ example: 'Estrategias para el jefe final', minLength: 5, maxLength: 120 })
   @IsString()
   @Length(5, 120)
   title!: string
-
-  @ApiProperty({ example: 'acc-0b1d5b0e' })
-  @IsString()
-  @Length(1, 128)
-  authorId!: string
 }
 
 export class PublishPostRequest {
-  @ApiProperty({ example: 'acc-0b1d5b0e' })
-  @IsString()
-  @Length(1, 128)
-  authorId!: string
-
   @ApiProperty({ example: 'Conviene abrir con el escudo equipado.', maxLength: 2000 })
   @IsString()
   @Length(1, 2000)
   content!: string
-}
-
-export class ModerateRequest {
-  @ApiProperty({ example: 'acc-moderador' })
-  @IsString()
-  @Length(1, 128)
-  moderatorId!: string
 }
 
 export class PostResponse {
