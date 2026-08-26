@@ -30,13 +30,18 @@ describe('API de comunidad', () => {
     await app.close()
   })
 
+  /**
+   * Ninguna peticion declara autor ni moderador: salen del testimonio. Con
+   * AUTH_MODE=disabled ese testimonio es la identidad anonima, y el sujeto que
+   * queda registrado es literalmente `anonymous`.
+   */
+  const ANONYMOUS = 'anonymous'
+
   const openThread = (title = 'Estrategias para el jefe final') =>
-    request(app.getHttpServer()).post('/api/threads').send({ title, authorId: 'acc-1' })
+    request(app.getHttpServer()).post('/api/threads').send({ title })
 
   const publish = (threadId: string, content = 'Un mensaje valido.') =>
-    request(app.getHttpServer())
-      .post(`/api/threads/${threadId}/posts`)
-      .send({ authorId: 'acc-2', content })
+    request(app.getHttpServer()).post(`/api/threads/${threadId}/posts`).send({ content })
 
   it('POST /api/threads abre un hilo y responde 201', async () => {
     const response = await openThread()
@@ -44,7 +49,7 @@ describe('API de comunidad', () => {
     expect(response.status).toBe(201)
     expect(response.body).toMatchObject({
       title: 'Estrategias para el jefe final',
-      authorId: 'acc-1',
+      authorId: ANONYMOUS,
       status: 'OPEN',
       postCount: 0,
       posts: [],
@@ -58,7 +63,20 @@ describe('API de comunidad', () => {
   it('POST /api/threads rechaza campos no declarados en el contrato', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/threads')
-      .send({ title: 'Titulo valido de prueba', authorId: 'acc-1', status: 'CLOSED' })
+      .send({ title: 'Titulo valido de prueba', status: 'CLOSED' })
+
+    expect(response.status).toBe(400)
+  })
+
+  /**
+   * `authorId` salio del contrato al pasar a derivarse del testimonio. Enviarlo
+   * ya no lo respeta el servicio: lo rechaza. Es la diferencia entre ignorar un
+   * intento de suplantacion y rechazarlo de forma ruidosa.
+   */
+  it('rechaza un intento de declarar el autor en la peticion', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/threads')
+      .send({ title: 'Titulo valido de prueba', authorId: 'acc-de-otra-persona' })
 
     expect(response.status).toBe(400)
   })
@@ -71,7 +89,7 @@ describe('API de comunidad', () => {
     expect(response.status).toBe(201)
     expect(response.body.postCount).toBe(1)
     expect(response.body.posts[0]).toMatchObject({
-      authorId: 'acc-2',
+      authorId: ANONYMOUS,
       content: 'Conviene abrir con el escudo.',
     })
   })
@@ -94,9 +112,9 @@ describe('API de comunidad', () => {
     const withPost = await publish(id, 'Contenido inapropiado')
     const postId = String(withPost.body.posts[0].id)
 
-    const hide = await request(app.getHttpServer())
-      .post(`/api/threads/${id}/posts/${postId}/hiding`)
-      .send({ moderatorId: 'acc-mod' })
+    const hide = await request(app.getHttpServer()).post(
+      `/api/threads/${id}/posts/${postId}/hiding`,
+    )
 
     expect(hide.status).toBe(200)
     expect(hide.body.postCount).toBe(0)
@@ -111,19 +129,12 @@ describe('API de comunidad', () => {
     const id = String(thread.body.id)
 
     expect(
-      (
-        await request(app.getHttpServer())
-          .post(`/api/threads/${id}/posts/inexistente/hiding`)
-          .send({ moderatorId: 'acc-mod' })
-      ).status,
+      (await request(app.getHttpServer()).post(`/api/threads/${id}/posts/inexistente/hiding`))
+        .status,
     ).toBe(400)
 
     expect(
-      (
-        await request(app.getHttpServer())
-          .post('/api/threads/inexistente/posts/p/hiding')
-          .send({ moderatorId: 'acc-mod' })
-      ).status,
+      (await request(app.getHttpServer()).post('/api/threads/inexistente/posts/p/hiding')).status,
     ).toBe(404)
   })
 
@@ -132,9 +143,7 @@ describe('API de comunidad', () => {
     const id = String(thread.body.id)
     await publish(id, 'Mensaje anterior al cierre')
 
-    const close = await request(app.getHttpServer())
-      .post(`/api/threads/${id}/closure`)
-      .send({ moderatorId: 'acc-mod' })
+    const close = await request(app.getHttpServer()).post(`/api/threads/${id}/closure`)
 
     expect(close.status).toBe(200)
     expect(close.body.status).toBe('CLOSED')
@@ -149,24 +158,12 @@ describe('API de comunidad', () => {
   it('responde 400 al cerrar dos veces y 404 si el hilo no existe', async () => {
     const thread = await openThread('Hilo de doble cierre')
     const id = String(thread.body.id)
-    await request(app.getHttpServer())
-      .post(`/api/threads/${id}/closure`)
-      .send({ moderatorId: 'acc-mod' })
+    await request(app.getHttpServer()).post(`/api/threads/${id}/closure`)
+
+    expect((await request(app.getHttpServer()).post(`/api/threads/${id}/closure`)).status).toBe(400)
 
     expect(
-      (
-        await request(app.getHttpServer())
-          .post(`/api/threads/${id}/closure`)
-          .send({ moderatorId: 'acc-mod' })
-      ).status,
-    ).toBe(400)
-
-    expect(
-      (
-        await request(app.getHttpServer())
-          .post('/api/threads/inexistente/closure')
-          .send({ moderatorId: 'acc-mod' })
-      ).status,
+      (await request(app.getHttpServer()).post('/api/threads/inexistente/closure')).status,
     ).toBe(404)
   })
 

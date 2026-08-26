@@ -22,6 +22,44 @@ La separación se materializa en dos sitios distintos: la instantánea del agreg
 
 Un mensaje no tiene sentido fuera de su hilo, y las reglas que lo gobiernan — no publicar en un hilo cerrado, no superar el límite de mensajes — son invariantes del hilo completo. Por eso `Thread` es la raíz de agregado y los mensajes viven dentro de ella.
 
+## Verificacion de identidad
+
+El servicio comprueba el testimonio que acompana a cada peticion contra el JWKS del user pool de Cognito ([ADR-004](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/main/docs/adr/ADR-004-identity-directory.md)). Se verifica el **token de acceso**, no el de identidad: el de identidad describe al usuario para la interfaz, el de acceso es el que autoriza y el unico cuyo `client_id` puede comprobarse.
+
+La comprobacion de firma la hace [`aws-jwt-verify`](https://github.com/awslabs/aws-jwt-verify). **No se implementa verificacion criptografica a mano**: es la clase de codigo donde un error sutil no falla, sino que acepta tokens falsificados en silencio.
+
+**La proteccion es el comportamiento por defecto.** El guard se registra de forma global y hay que excluir explicitamente lo que deba ser publico con `@Public()`. Al reves, cualquier endpoint nuevo naceria desprotegido y ese olvido no falla ninguna prueba.
+
+| Ruta                                         | Proteccion                                 |
+| -------------------------------------------- | ------------------------------------------ |
+| `GET /api/threads` y `GET /api/threads/:id`  | **Publica.** La conversacion es legible    |
+| `POST /api/threads`                          | Testimonio valido. El autor sale del `sub` |
+| `POST /api/threads/:id/posts`                | Testimonio valido. El autor sale del `sub` |
+| `POST /api/threads/:id/posts/:postId/hiding` | Rol **`MODERATOR`** o **`ADMINISTRATOR`**  |
+| `POST /api/threads/:id/closure`              | Rol **`MODERATOR`** o **`ADMINISTRATOR`**  |
+| `GET /api/health/*`                          | **Publica**                                |
+
+### `authorId` y `moderatorId` salieron del contrato
+
+Estaban en el cuerpo de la peticion, es decir, **los declaraba el cliente**. Cualquiera podia publicar en nombre de otra persona u ocultar mensajes declarandose moderador. Ahora salen del `sub` del testimonio verificado.
+
+Enviarlos ahora produce **400**: el intento de suplantacion se rechaza de forma ruidosa en lugar de aceptarse en silencio.
+
+La autoridad de moderacion **no se hereda** de haber abierto el hilo: ni el autor puede cerrarlo sin el rol.
+
+### Un binario de produccion sin autenticacion no arranca
+
+Con `NODE_ENV=production` y `AUTH_MODE=disabled`, `loadConfig` lanza `ConfigurationError` y el servicio **no llega a escuchar**. Es la traduccion en codigo del blocker de ADR-004: un aviso en el registro se pasa por alto; un arranque que falla, no.
+
+| Variable             | Efecto                                                                   |
+| -------------------- | ------------------------------------------------------------------------ |
+| `AUTH_MODE=disabled` | Se atribuye la **identidad anonima** a toda peticion. Estado del blocker |
+| `AUTH_MODE=jwt`      | Exige `COGNITO_USER_POOL_ID` y `COGNITO_CLIENT_ID`                       |
+
+Con `disabled` no se deja pasar sin mas: se atribuye el sujeto literal `anonymous` con todos los roles. Sin proveedor **no se sabe** quien realiza la peticion, y el dato que se guarde debe decirlo. Un registro firmado por `anonymous` es honesto; uno firmado por un identificador sin verificar, no.
+
+Los roles llegan en el claim `cognito:groups`. **Los grupos que no corresponden a un rol conocido se descartan**: aceptarlos convertiria el pool en una fuente de roles arbitrarios, donde bastaria crear un grupo con cualquier nombre para inventar un permiso.
+
 ## Requisitos
 
 | Herramienta | Versión                                       |
