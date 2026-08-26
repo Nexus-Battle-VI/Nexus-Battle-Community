@@ -60,6 +60,49 @@ Con `disabled` no se deja pasar sin mas: se atribuye el sujeto literal `anonymou
 
 Los roles llegan en el claim `cognito:groups`. **Los grupos que no corresponden a un rol conocido se descartan**: aceptarlos convertiria el pool en una fuente de roles arbitrarios, donde bastaria crear un grupo con cualquier nombre para inventar un permiso.
 
+## Persistencia
+
+PostgreSQL con **Kysely** ([ADR-012](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/main/docs/adr/ADR-012-orm-odm.md)). Kysely es un constructor de consultas, no un ORM: **cada consulta está escrita a la vista**, y no hay carga perezosa que dispare consultas dentro de un bucle sin que aparezcan en el código.
+
+| Variable                      | Efecto                                                       |
+| ----------------------------- | ------------------------------------------------------------ |
+| `PERSISTENCE_DRIVER=memory`   | Repositorio en proceso. **El estado se pierde al reiniciar** |
+| `PERSISTENCE_DRIVER=postgres` | Adaptador real. Exige `DATABASE_URL`                         |
+
+### El esquema no se migra al arrancar
+
+```bash
+npm run migrate
+```
+
+Es un paso explícito del despliegue, y el motivo es concreto: migrar desde el arranque hace que **varias réplicas migren a la vez**, y que un despliegue con una migración rota deje el servicio en **bucle de reinicio** en lugar de fallar una sola vez, de forma visible.
+
+### El orden de los mensajes es una columna, no una deducción
+
+Los mensajes llevan `position`. Lo tentador sería ordenar por `created_at`, pero con un reloj fijo —el de las pruebas— dos mensajes comparten instante y el orden pasaría a depender del identificador, que no significa nada.
+
+### Publicar un mensaje no reescribe los otros 499
+
+Un hilo admite hasta 500 mensajes. Borrarlos e insertarlos en cada guardado significaría reescribir 500 filas para publicar una. Se insertan con `on conflict` y una cláusula `where` que compara contra `excluded`: sin ella PostgreSQL escribiría una versión nueva de cada fila igualmente, porque **una actualización que no cambia nada sigue siendo una escritura**.
+
+`list()` lee todos los hilos con sus mensajes en **dos consultas**, no en una por hilo.
+
+### Las restricciones viven en el motor
+
+Estado del hilo, unicidad de la posición dentro del hilo y clave foránea a `threads`. El **autor no lleva clave foránea**: vive en Account, y una clave foránea entre servicios está prohibida en este proyecto.
+
+Una migración no puede importar el dominio, así que el vocabulario se repite en SQL. Hay pruebas que comparan ambos y fallan si divergen.
+
+### Pruebas contra el motor real
+
+```bash
+npm run test:db
+```
+
+Levantan PostgreSQL 17 en un contenedor con Testcontainers. **Necesitan Docker**, y por eso están fuera de `npm test`: quien trabaja en el dominio o en los casos de uso no debería necesitarlo. El CI ejecuta ambas suites.
+
+Lo que comprueban no se puede comprobar de otra forma: que las restricciones existan de verdad y que el guardado haga lo que dice. Un doble de prueba habría pasado con un esquema equivocado.
+
 ## Requisitos
 
 | Herramienta | Versión                                       |
@@ -135,7 +178,7 @@ La imagen es multi-etapa, se ejecuta con el usuario sin privilegios `node`, incl
 
 ## Limitaciones conocidas del alcance actual
 
-- **La persistencia es en memoria** y se pierde al reiniciar. El adaptador PostgreSQL depende de que ADR-005 decida el ORM. Configurar `PERSISTENCE_DRIVER=postgres` valida la configuración y lo advierte en el registro, pero no habilita un adaptador que no existe.
+- **La persistencia por defecto es en memoria y se pierde al reiniciar.** Con `PERSISTENCE_DRIVER=postgres` opera el adaptador real sobre PostgreSQL con Kysely, probado contra un motor en contenedor. El repositorio en memoria no es un resto del andamiaje: es lo que permite probar el dominio y los casos de uso **sin Docker**.
 - **No hay control de acceso.** El identificador de quien modera llega en el cuerpo de la petición, sin verificar. Cualquiera podría ocultar mensajes o cerrar hilos. Implementarlo correctamente requiere que Account emita credenciales verificables, lo que depende del proveedor de identidad pendiente de aprobación. Es la limitación **más relevante de este servicio** y no debe desplegarse en un entorno accesible sin resolverla.
 - **No hay filtrado automático de contenido.** La moderación es manual y reactiva. Un filtro previo requiere una decisión de producto sobre qué se considera abusivo.
 - La lectura no está paginada. Con el límite de 500 mensajes por hilo es aceptable en la demo, pero no en la arquitectura objetivo.
