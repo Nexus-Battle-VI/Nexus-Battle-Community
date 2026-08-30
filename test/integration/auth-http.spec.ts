@@ -29,6 +29,11 @@ const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
     email: null,
     roles: new Set([Role.Player, Role.Moderator]),
   },
+  'token-super-administrador': {
+    subject: 'sujeto-super-admin',
+    email: null,
+    roles: new Set([Role.Player, Role.SuperAdministrator]),
+  },
 }
 
 const stubVerifier: TokenVerifierPort = {
@@ -176,6 +181,15 @@ describe('API de comunidad con autenticacion activa', () => {
       const response = await request(app.getHttpServer())
         .post(`/api/threads/${threadId}/posts/${postId}/hiding`)
         .set('Authorization', bearer('token-moderador'))
+
+      expect(response.status).toBe(200)
+      expect(response.body).toMatchObject({ postCount: 0 })
+    })
+
+    it('un SUPER_ADMINISTRATOR puro puede moderar por jerarquia', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/api/threads/${threadId}/posts/${postId}/hiding`)
+        .set('Authorization', bearer('token-super-administrador'))
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({ postCount: 0 })
