@@ -154,6 +154,47 @@ describe('PostgresThreadRepository', () => {
     expect(found?.toSnapshot().posts.map((post) => post.hidden)).toEqual([false, true])
   })
 
+  it('filtra mensajes directamente por autor e incluye los ocultos', async () => {
+    const ownThread = buildThread()
+    const otherThread = buildThread()
+    ownThread.publishPost({
+      id: PostId.create('post-propio-oculto'),
+      authorId: AuthorId.create('sub-titular'),
+      content: PostContent.create('Dato del titular'),
+      occurredAt: AT,
+    })
+    ownThread.hidePost(PostId.create('post-propio-oculto'), MODERADOR, AT)
+    otherThread.publishPost({
+      id: PostId.create('post-ajeno'),
+      authorId: AuthorId.create('sub-ajeno'),
+      content: PostContent.create('Dato ajeno'),
+      occurredAt: AT,
+    })
+    await repository.save(ownThread)
+    await repository.save(otherThread)
+
+    expect(await repository.findPostsByAuthor(AuthorId.create('sub-titular'))).toEqual([
+      {
+        id: 'post-propio-oculto',
+        threadId: ownThread.id.value,
+        content: 'Dato del titular',
+        createdAt: AT.toISOString(),
+      },
+    ])
+  })
+
+  it('crea un indice para la lectura eficiente de mensajes por autor', async () => {
+    const index = await sql<{ indexdef: string }>`
+      select indexdef
+      from pg_indexes
+      where schemaname = current_schema()
+        and tablename = 'posts'
+        and indexname = 'posts_por_autor'
+    `.execute(db)
+
+    expect(index.rows[0]?.indexdef).toContain('(author_id, created_at, id)')
+  })
+
   /**
    * Publicar un mensaje no debe reescribir los que ya estaban: la clausula
    * `where` del `on conflict` descarta las filas que no cambiaron. Se comprueba

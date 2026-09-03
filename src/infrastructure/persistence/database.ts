@@ -9,6 +9,7 @@ import { Pool } from 'pg'
 
 import type { Database } from '../../adapters/outbound/persistence/schema'
 import * as migration001 from '../../adapters/outbound/persistence/migrations/001-threads'
+import * as migration002 from '../../adapters/outbound/persistence/migrations/002-posts-by-author'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -49,6 +50,7 @@ const migrations: MigrationProvider = {
   getMigrations: () =>
     Promise.resolve({
       '001-threads': migration001,
+      '002-posts-by-author': migration002,
     }),
 }
 
