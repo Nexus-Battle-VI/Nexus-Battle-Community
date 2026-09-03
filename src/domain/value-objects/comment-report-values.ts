@@ -55,8 +55,18 @@ export const isReportCategory = (value: string): value is ReportCategory =>
 
 /**
  * Descripcion adicional del reporte. Es opcional -- HU-46 es explicito en que
- * su ausencia no debe impedir registrar un reporte valido -- pero cuando se
- * proporciona, se acota igual que cualquier otro texto libre de este servicio.
+ * su ausencia no debe impedir registrar un reporte valido.
+ *
+ * `MAX_LENGTH` es un limite tecnico PROVISIONAL, no una regla de HU-46:
+ * RF-46 (Management#40) no fija una longitud, y no es -contra lo que decia
+ * antes este comentario- el mismo limite que usa otro texto libre de este
+ * servicio: `PostContent`/`CommentContent` usan 2000, `ThreadTitle` usa 120.
+ * Auditoria de alineacion HU-46 (2026-09): no se encontro ninguna fuente
+ * formal -la propia Issue, sus comentarios, ni una politica transversal en
+ * Infrastructure- que respalde 500 especificamente. Se conserva el valor
+ * -cambiarlo por otro numero seria inventar una cifra igual de infundada- y
+ * se corrige unicamente la afirmacion falsa sobre su origen. Queda pendiente
+ * que Management defina esta cifra como decision de negocio cerrada.
  */
 export class ReportDescription {
   static readonly MAX_LENGTH = 500
