@@ -43,6 +43,17 @@ export interface AppConfig {
   readonly authMode: AuthMode
   readonly cognito: CognitoConfig | null
   /**
+   * Contrato interno con Account para comprobar la evidencia de segundo factor.
+   *
+   * `null` cuando falta configuracion. En ese caso las mutaciones de
+   * moderacion NO quedan abiertas: el verificador responde que no puede
+   * comprobar, y el guard deniega con 503.
+   */
+  readonly accountInternalUrl: string | null
+  readonly internalServiceAuthSecret: string | null
+  readonly internalServiceName: string
+  readonly internalTimeoutMs: number
+  /**
    * Limite de reportes de comentario por jugador (HU-46.3) y la ventana, en
    * horas, sobre la que se cuenta.
    *
@@ -200,6 +211,13 @@ export const loadConfig = (env: RawEnv): AppConfig => {
       authMode === AuthMode.Jwt
         ? { userPoolId: cognitoUserPoolId, clientId: cognitoClientId }
         : null,
+    accountInternalUrl: readString(env, 'ACCOUNT_INTERNAL_URL', '').replace(/\/+$/, '') || null,
+    internalServiceAuthSecret: readString(env, 'INTERNAL_SERVICE_AUTH_SECRET', '') || null,
+    internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'community'),
+    // Corto a proposito: quien espera es una mutacion de moderacion, y un
+    // tiempo de espera generoso convertiria una caida de Account en una
+    // interfaz congelada en lugar de un rechazo claro.
+    internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 3_000, 100, 30_000),
     // Valor provisional (nota de Refinement en HU-46.3): 10 reportes por 24
     // horas. RF-46 no define esta cifra; es configuracion, no una decision
     // de negocio cerrada.

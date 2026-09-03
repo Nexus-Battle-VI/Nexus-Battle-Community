@@ -12,6 +12,10 @@ import {
   type TokenVerifierPort,
   type VerifiedIdentity,
 } from '../../src/application/ports/TokenVerifierPort'
+import {
+  MFA_EVIDENCE_VERIFIER,
+  MfaEvidenceOutcome,
+} from '../../src/application/ports/MfaEvidenceVerifierPort'
 
 /**
  * Integracion con la autenticacion ACTIVA.
@@ -20,19 +24,39 @@ import {
  * antes, `authorId` y `moderatorId` los declaraba el cliente en el cuerpo de la
  * peticion. Cualquiera podia publicar en nombre de otra persona, ocultar
  * mensajes ajenos o cerrar hilos con solo escribir un identificador.
+ *
+ * Este bloque comprueba principalmente RBAC, no evidencia MFA: el verificador
+ * de evidencia se sustituye por uno siempre valido. El comportamiento
+ * exhaustivo de la evidencia vive en `mfa-evidence-http.spec.ts`.
  */
 const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
-  'token-ana': { subject: 'sujeto-ana', email: null, roles: new Set([Role.Player]) },
-  'token-bruno': { subject: 'sujeto-bruno', email: null, roles: new Set([Role.Player]) },
+  'token-ana': {
+    subject: 'sujeto-ana',
+    email: null,
+    roles: new Set([Role.Player]),
+    jti: 'jti-ana',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
+  'token-bruno': {
+    subject: 'sujeto-bruno',
+    email: null,
+    roles: new Set([Role.Player]),
+    jti: 'jti-bruno',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
   'token-moderador': {
     subject: 'sujeto-moderador',
     email: null,
     roles: new Set([Role.Player, Role.Moderator]),
+    jti: 'jti-moderador',
+    expiresAt: new Date(Date.now() + 900_000),
   },
   'token-super-administrador': {
     subject: 'sujeto-super-admin',
     email: null,
     roles: new Set([Role.Player, Role.SuperAdministrator]),
+    jti: 'jti-super-admin',
+    expiresAt: new Date(Date.now() + 900_000),
   },
 }
 
@@ -64,6 +88,10 @@ describe('API de comunidad con autenticacion activa', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TOKEN_VERIFIER)
       .useValue(stubVerifier)
+      .overrideProvider(MFA_EVIDENCE_VERIFIER)
+      .useValue({
+        verify: (): Promise<MfaEvidenceOutcome> => Promise.resolve(MfaEvidenceOutcome.Valid),
+      })
       .compile()
 
     app = moduleRef.createNestApplication()

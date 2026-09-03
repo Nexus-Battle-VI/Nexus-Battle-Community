@@ -76,10 +76,17 @@ import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../conf
 
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
+import { MfaEvidenceGuard } from '../../adapters/inbound/http/auth/mfa-evidence.guard'
 import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymous.guard'
 import { TOKEN_VERIFIER } from '../../application/ports/TokenVerifierPort'
 import type { TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
+import {
+  MFA_EVIDENCE_VERIFIER,
+  MfaEvidenceOutcome,
+  type MfaEvidenceVerifierPort,
+} from '../../application/ports/MfaEvidenceVerifierPort'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
+import { AccountMfaEvidenceClient } from '../../adapters/outbound/identity/AccountMfaEvidenceClient'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 
 export const APP_CONFIG = Symbol('AppConfig')
@@ -251,6 +258,58 @@ export const LOGGER = Symbol('Logger')
           ? new RolesGuard(reflector)
           : { canActivate: (): boolean => true },
       inject: [APP_CONFIG, Reflector],
+    },
+    {
+      // Comprueba la evidencia de segundo factor en las mutaciones marcadas.
+      // Va DESPUES de RolesGuard: quien no tiene rol suficiente ya fue
+      // rechazado, y asi no se gasta una llamada de red por cada intento sin
+      // permiso.
+      provide: APP_GUARD,
+      useFactory: (
+        config: AppConfig,
+        reflector: Reflector,
+        verifier: MfaEvidenceVerifierPort,
+      ): CanActivate =>
+        // Solo con proveedor de identidad activo, igual que `RolesGuard`. Sin
+        // proveedor no hay RBAC ni testimonios, asi que exigir evidencia de un
+        // segundo factor que nadie pudo superar dejaria el servicio
+        // inutilizable en desarrollo sin ganar ninguna proteccion: un binario
+        // con `NODE_ENV=production` y `AUTH_MODE=disabled` no arranca.
+        config.authMode === AuthMode.Jwt
+          ? new MfaEvidenceGuard({ reflector, verifier })
+          : { canActivate: (): boolean => true },
+      inject: [APP_CONFIG, Reflector, MFA_EVIDENCE_VERIFIER],
+    },
+    {
+      provide: MFA_EVIDENCE_VERIFIER,
+      useFactory: (config: AppConfig, logger: Logger): MfaEvidenceVerifierPort => {
+        if (config.accountInternalUrl === null || config.internalServiceAuthSecret === null) {
+          logger.warn('mfa_evidence_verifier', {
+            driver: 'no-configurado',
+            detail:
+              'Sin ACCOUNT_INTERNAL_URL o INTERNAL_SERVICE_AUTH_SECRET no se puede comprobar el segundo factor: las mutaciones de moderacion fallaran cerradas.',
+          })
+
+          // NO se deja pasar ante configuracion ausente. Un despliegue
+          // incompleto dejaria las mutaciones de moderacion exigiendo solo el
+          // rol, que es exactamente lo que este cambio viene a cerrar.
+          return {
+            verify: (): Promise<MfaEvidenceOutcome> =>
+              Promise.resolve(MfaEvidenceOutcome.Unavailable),
+          }
+        }
+
+        logger.info('mfa_evidence_verifier', { driver: 'account' })
+
+        return new AccountMfaEvidenceClient({
+          baseUrl: config.accountInternalUrl,
+          secret: config.internalServiceAuthSecret,
+          serviceName: config.internalServiceName,
+          timeoutMs: config.internalTimeoutMs,
+          logger,
+        })
+      },
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       provide: CLOCK,

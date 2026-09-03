@@ -70,6 +70,23 @@ describe('Traduccion del token a identidad verificada', () => {
     ).toBe('ana@nexus.test')
   })
 
+  it('conserva el jti para correlación sin tratarlo como evidencia MFA', () => {
+    const identity = toVerifiedIdentity({ sub: 's', jti: 'access-token-1' })
+
+    expect(identity.jti).toBe('access-token-1')
+    expect(identity.expiresAt).toBeNull()
+  })
+
+  it.each([undefined, null, '', 42])('ignora un jti no utilizable: %p', (jti) => {
+    expect(toVerifiedIdentity({ sub: 's', jti }).jti).toBeNull()
+  })
+
+  it('convierte exp de segundos Unix a la fecha de expiración del testimonio', () => {
+    expect(toVerifiedIdentity({ sub: 's', exp: 1_700_000_000 }).expiresAt).toEqual(
+      new Date(1_700_000_000_000),
+    )
+  })
+
   /**
    * Antes se rellenaba con cadena vacia. Un token con firma valida pero sin
    * `sub` se convertia asi en una identidad utilizable, y todos los tokens mal
@@ -95,6 +112,8 @@ describe('JwtAuthGuard', () => {
     subject: 'sujeto-1',
     email: null,
     roles: new Set([Role.Player]),
+    jti: null,
+    expiresAt: null,
   }
 
   const verifier = (impl: TokenVerifierPort['verify']): TokenVerifierPort => ({ verify: impl })
@@ -182,6 +201,8 @@ describe('CurrentIdentity', () => {
       subject: 'sujeto-1',
       email: null,
       roles: new Set([Role.Player]),
+      jti: null,
+      expiresAt: null,
     }
 
     expect(resolve({ headers: {}, identity })).toBe(identity)
@@ -197,6 +218,8 @@ describe('RolesGuard', () => {
     subject: 's',
     email: null,
     roles: new Set(roles),
+    jti: null,
+    expiresAt: null,
   })
 
   it('deja pasar cuando la ruta no exige ningun rol', () => {
@@ -279,6 +302,16 @@ describe('AnonymousIdentityGuard', () => {
     expect(ANONYMOUS_IDENTITY.roles.has(Role.Moderator)).toBe(true)
     expect(ANONYMOUS_IDENTITY.roles.has(Role.Player)).toBe(true)
     expect(ANONYMOUS_IDENTITY.roles.has(Role.SuperAdministrator)).toBe(true)
+  })
+
+  /**
+   * Sin proveedor no hay testimonio del que extraer `jti` ni `exp`. Fingirlos
+   * permitiria que una mutacion de moderacion se diera por respaldada por un
+   * segundo factor que nadie supero.
+   */
+  it('no atribuye jti ni expiracion: no hay testimonio del que salgan', () => {
+    expect(ANONYMOUS_IDENTITY.jti).toBeNull()
+    expect(ANONYMOUS_IDENTITY.expiresAt).toBeNull()
   })
 })
 

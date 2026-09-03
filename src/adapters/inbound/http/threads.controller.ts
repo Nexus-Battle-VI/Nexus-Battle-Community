@@ -38,7 +38,7 @@ import {
 } from './threads.dto'
 
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
-import { CurrentIdentity, Public, Roles } from './auth/decorators'
+import { CurrentIdentity, Public, RequiresMfaEvidence, Roles } from './auth/decorators'
 
 /**
  * Adaptador de entrada HTTP.
@@ -122,7 +122,12 @@ export class ThreadsController {
 
   // Ocultar exige rol de moderacion. Antes bastaba con enviar un `moderatorId`
   // en el cuerpo: cualquiera podia ocultar cualquier mensaje.
+  //
+  // `@RequiresMfaEvidence()` acompana a `@Roles(...)`, no la sustituye. El rol
+  // dice quien es; la evidencia dice que ESE testimonio concreto nacio de un
+  // segundo factor.
   @Roles(Role.Moderator, Role.Administrator)
+  @RequiresMfaEvidence()
   @Post(':threadId/posts/:postId/hiding')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Oculta un mensaje por moderacion' })
@@ -142,6 +147,7 @@ export class ThreadsController {
   }
 
   @Roles(Role.Moderator, Role.Administrator)
+  @RequiresMfaEvidence()
   @Post(':threadId/closure')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cierra el hilo' })
