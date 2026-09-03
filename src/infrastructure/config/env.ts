@@ -53,6 +53,16 @@ export interface AppConfig {
   readonly internalServiceAuthSecret: string | null
   readonly internalServiceName: string
   readonly internalTimeoutMs: number
+  /**
+   * Limite de reportes de comentario por jugador (HU-46.3) y la ventana, en
+   * horas, sobre la que se cuenta.
+   *
+   * RF-46 no fija un valor numerico -- la HU es explicita en que no debe
+   * inventarse uno -- asi que es configuracion, con un valor por defecto
+   * provisional documentado como tal, no una decision de negocio definitiva.
+   */
+  readonly commentReportLimit: number
+  readonly commentReportWindowHours: number
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -208,5 +218,10 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     // tiempo de espera generoso convertiria una caida de Account en una
     // interfaz congelada en lugar de un rechazo claro.
     internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 3_000, 100, 30_000),
+    // Valor provisional (nota de Refinement en HU-46.3): 10 reportes por 24
+    // horas. RF-46 no define esta cifra; es configuracion, no una decision
+    // de negocio cerrada.
+    commentReportLimit: readInteger(env, 'COMMENT_REPORT_LIMIT', 10, 1, 1_000),
+    commentReportWindowHours: readInteger(env, 'COMMENT_REPORT_WINDOW_HOURS', 24, 1, 8_760),
   }
 }

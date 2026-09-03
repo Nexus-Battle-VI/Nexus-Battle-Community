@@ -10,28 +10,35 @@ No es responsable de quién es la persona que escribe. El identificador proviene
 
 ### Datos que posee
 
-Community es propietario exclusivo de los hilos y sus mensajes. Ningún otro servicio accede a este almacén, ni directamente ni mediante claves foráneas.
+Community es propietario exclusivo de los hilos, sus mensajes, y de los comentarios y calificaciones que los jugadores publican sobre un producto (HU-40). Ningún otro servicio accede a este almacén, ni directamente ni mediante claves foráneas.
+
+El `productId` que referencian los comentarios y calificaciones es un dato de OTRO servicio (`Nexus-Battle-Catalog`): Community no posee el producto, solo lo que los jugadores dicen sobre él.
 
 Es el contexto del producto con **mayor exposición a contenido escrito por personas usuarias**, y por tanto el que concentra el riesgo de abuso.
 
 ## Capas
 
 ```text
-+-------------------------------------------------------------+
-|  adapters/inbound/http   ThreadsController                   |
-+-------------------------------------------------------------+
-|  application             OpenThread, PublishPost, HidePost,  |
-|                          CloseThread, GetThread, ListThreads |
-+-------------------------------------------------------------+
-|  domain                  Thread (raiz), ModerationPolicy,    |
-|                          objetos de valor y eventos          |
-+-------------------------------------------------------------+
-|  adapters/outbound       InMemoryThreadRepository,           |
-|                          SystemClock, UuidGenerator          |
-+-------------------------------------------------------------+
-|  infrastructure          config, observability, health,      |
-|                          bootstrap (raiz de composicion)     |
-+-------------------------------------------------------------+
++---------------------------------------------------------------------+
+|  adapters/inbound/http   ThreadsController, ProductCommentsController|
++---------------------------------------------------------------------+
+|  application             OpenThread, PublishPost, HidePost,         |
+|                          CloseThread, GetThread, ListThreads,       |
+|                          PublishProductComment, ListProductComments,|
+|                          RateProduct, GetProductReviewSummary       |
++---------------------------------------------------------------------+
+|  domain                  Thread (raiz), ProductComment,             |
+|                          ProductReview, ModerationPolicy,           |
+|                          objetos de valor y eventos                 |
++---------------------------------------------------------------------+
+|  adapters/outbound       Thread/ProductComment/ProductReview        |
+|                          Repository (InMemory y Postgres),          |
+|                          LocalProductCatalog, SystemClock,          |
+|                          UuidGenerator                               |
++---------------------------------------------------------------------+
+|  infrastructure          config, observability, health,             |
+|                          bootstrap (raiz de composicion)            |
++---------------------------------------------------------------------+
 ```
 
 ## Por qué el mensaje no es un agregado
@@ -60,23 +67,39 @@ La separación entre `toSnapshot()` y `toThreadDto()` es intencionada:
 
 Si ambas responsabilidades vivieran en el mismo método, ocultar sería o bien irreversible o bien ineficaz.
 
+## Por qué el comentario de producto no es un Post
+
+HU-40 exige que un jugador pueda publicar cualquier cantidad de comentarios sobre un producto, sin límite. Reutilizar `Thread`/`Post` para esto habría heredado `ModerationPolicy.MAX_POSTS_PER_THREAD` (500 mensajes por agregado) — un tope que existe por una razón real (evitar cargar un agregado sin límite) pero que aquí habría contradicho la propia regla de negocio de HU-40.
+
+Por eso `ProductComment` es una entidad independiente, identificada por su propio id y asociada a un `productId`, sin agregado padre y sin invariantes de "hilo cerrado". Se consulta paginada (`limit`/`offset`), no cargando todo el histórico de un producto de una vez.
+
+`ProductReview` (la calificación) es, a su vez, independiente de `ProductComment`: retirar un comentario no borra la calificación de quien lo escribió, y calificar un producto no limita cuántos comentarios puede seguir publicando ese jugador. La unicidad de "una calificación por jugador y producto" la garantiza en última instancia la restricción `UNIQUE` del motor, no solo la comprobación previa del caso de uso — verificado contra PostgreSQL real ante dos solicitudes concurrentes.
+
+## Existencia de producto: un catálogo local, no una llamada a Catalog
+
+`ProductExistencePort` (implementado hoy por `LocalProductCatalog`) es el mismo patrón que `LocalCatalogPricing` en `Nexus-Battle-Commerce`: un adaptador completo sobre datos en memoria, no una simulación del servicio real. Community no llama en vivo a `Nexus-Battle-Catalog` porque el contrato público de Catalog expone `sku`, mientras que este dominio ya trabaja con `productId` (el mismo `productId` canónico de Catalog, validado con el mismo patrón UUID) — la brecha de identificador queda fuera del alcance de HU-40.
+
 ## Puertos
 
-| Puerto                 | Responsabilidad                           | Implementación actual      |
-| ---------------------- | ----------------------------------------- | -------------------------- |
-| `ThreadRepositoryPort` | Persistir, recuperar y listar hilos       | `InMemoryThreadRepository` |
-| `ClockPort`            | Proveer el instante actual                | `SystemClock`              |
-| `IdGeneratorPort`      | Generar identificadores de hilo y mensaje | `UuidGenerator`            |
+| Puerto                         | Responsabilidad                                        | Implementación actual                                                   |
+| ------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `ThreadRepositoryPort`         | Persistir, recuperar y listar hilos                    | `InMemoryThreadRepository` / `PostgresThreadRepository`                 |
+| `ProductCommentRepositoryPort` | Persistir y listar (paginados) comentarios de producto | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository` |
+| `ProductReviewRepositoryPort`  | Persistir calificaciones y calcular su resumen         | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`   |
+| `ProductExistencePort`         | Confirmar que un producto existe                       | `LocalProductCatalog`                                                   |
+| `ClockPort`                    | Proveer el instante actual                             | `SystemClock`                                                           |
+| `IdGeneratorPort`              | Generar identificadores                                | `UuidGenerator`                                                         |
 
 ## Patrones aplicados
 
-| Patrón             | Dónde                                            | Por qué                                                |
-| ------------------ | ------------------------------------------------ | ------------------------------------------------------ |
-| Ports and Adapters | Todas las dependencias externas                  | Permite sustituir la persistencia sin tocar el dominio |
-| Aggregate          | `Thread` con sus mensajes                        | Las invariantes abarcan el hilo completo               |
-| Repository         | `ThreadRepositoryPort`                           | Aísla el agregado del mecanismo de almacenamiento      |
-| State              | `ThreadStatus`                                   | Concentra qué operaciones admite cada estado           |
-| Domain Events      | `post.published`, `post.hidden`, `thread.closed` | Registra hechos de forma trazable                      |
+| Patrón                | Dónde                                                                                 | Por qué                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Ports and Adapters    | Todas las dependencias externas                                                       | Permite sustituir la persistencia sin tocar el dominio                                                                 |
+| Aggregate             | `Thread` con sus mensajes                                                             | Las invariantes abarcan el hilo completo                                                                               |
+| Entidad independiente | `ProductComment`, `ProductReview`                                                     | Sin invariantes compartidas entre comentarios/calificaciones de un mismo producto; ninguna necesita cargar a las demás |
+| Repository            | `ThreadRepositoryPort`, `ProductCommentRepositoryPort`, `ProductReviewRepositoryPort` | Aísla cada entidad del mecanismo de almacenamiento                                                                     |
+| State                 | `ThreadStatus`                                                                        | Concentra qué operaciones admite cada estado                                                                           |
+| Domain Events         | `post.published`, `post.hidden`, `thread.closed`                                      | Registra hechos de forma trazable                                                                                      |
 
 No se aplica CQRS ni Event Sourcing.
 
@@ -105,6 +128,9 @@ No se registra el contenido de los mensajes.
 - La persistencia es en memoria y se pierde al reiniciar. El adaptador PostgreSQL depende de ADR-005.
 - **La autenticación, el RBAC y la consulta fail-closed de evidencia MFA están implementados.** El autor y el moderador salen del testimonio verificado, nunca del cuerpo de la petición. Ocultar un mensaje y cerrar un hilo exigen además evidencia de segundo factor: Account conserva y valida la evidencia ligada a `subject + jti + method`, y Community exige explícitamente `method=AUTHENTICATOR_APP`, porque SMS o correo no satisfacen la decisión para operaciones de moderación. El despliegue debe configurar la URL interna, la identidad de servicio y el secreto HMAC compartido; si Account no puede comprobar la evidencia, Community responde `503` y no ejecuta la mutación. El modo sin autenticación queda limitado al desarrollo local y no arranca en producción.
 - No hay filtrado automático de contenido. La moderación es manual y reactiva.
-- La lectura no está paginada. El límite de 500 mensajes por hilo lo hace aceptable en la demo, no en la arquitectura objetivo.
+- La lectura de hilos no está paginada. El límite de 500 mensajes por hilo lo hace aceptable en la demo, no en la arquitectura objetivo. La lectura de comentarios de producto sí está paginada (`limit`/`offset`) desde el principio, precisamente porque HU-40 no admite un tope equivalente al de `Thread`.
+- **La existencia de producto se verifica contra un catálogo local (`LocalProductCatalog`), no contra `Nexus-Battle-Catalog` en vivo.** El contrato público de Catalog expone `sku`; este dominio ya trabaja con `productId`. Resolver esa brecha de identificador queda fuera del alcance de HU-40.
+- **Las imágenes de comentario se guardan como referencia (URL), no como archivo subido.** No existe todavía almacenamiento propio de objetos en Community: la decisión de si se reutiliza el bucket S3 de Catalog o se solicita uno nuevo está pendiente en el Enabler EN-028 de `Nexus-Battle-Management`.
+- El promedio de calificación de un producto se calcula y expone solo desde Community (`GET /products/:productId/reviews/summary`); no se escribe en el producto canónico de Catalog. Ese endpoint interno es una integración coordinada pero separada, del lado de Catalog.
 
 Estas limitaciones están declaradas de forma explícita para que la arquitectura de demo no se confunda con la arquitectura objetivo.

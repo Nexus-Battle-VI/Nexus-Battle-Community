@@ -173,6 +173,76 @@ describe('API de comunidad con autenticacion activa', () => {
     })
   })
 
+  describe('La lectura de mensajes propios para privacidad', () => {
+    it('exige autenticacion', async () => {
+      expect((await request(app.getHttpServer()).get('/api/me/posts')).status).toBe(401)
+    })
+
+    it('devuelve solo los mensajes del sujeto autenticado con el DTO minimo', async () => {
+      const hilo = await abrirHilo('token-ana')
+      const threadId = (hilo.body as { id: string }).id
+      await request(app.getHttpServer())
+        .post(`/api/threads/${threadId}/posts`)
+        .set('Authorization', bearer('token-ana'))
+        .send({ content: 'Mensaje privado de Ana.' })
+      await request(app.getHttpServer())
+        .post(`/api/threads/${threadId}/posts`)
+        .set('Authorization', bearer('token-bruno'))
+        .send({ content: 'Mensaje privado de Bruno.' })
+
+      const response = await request(app.getHttpServer())
+        .get('/api/me/posts')
+        .set('Authorization', bearer('token-ana'))
+
+      expect(response.status).toBe(200)
+      expect(response.body).toEqual([
+        {
+          id: expect.any(String),
+          threadId,
+          content: 'Mensaje privado de Ana.',
+          createdAt: expect.any(String),
+        },
+      ])
+    })
+
+    it('no permite seleccionar a otro titular mediante query, body ni path', async () => {
+      const hilo = await abrirHilo('token-ana')
+      const threadId = (hilo.body as { id: string }).id
+      await request(app.getHttpServer())
+        .post(`/api/threads/${threadId}/posts`)
+        .set('Authorization', bearer('token-bruno'))
+        .send({ content: 'Solo pertenece a Bruno.' })
+
+      const response = await request(app.getHttpServer())
+        .get(
+          '/api/me/posts?authorId=sujeto-bruno&ownerId=sujeto-bruno&accountId=sujeto-bruno&subject=sujeto-bruno&userId=sujeto-bruno',
+        )
+        .set('Authorization', bearer('token-ana'))
+        .send({
+          authorId: 'sujeto-bruno',
+          ownerId: 'sujeto-bruno',
+          accountId: 'sujeto-bruno',
+          subject: 'sujeto-bruno',
+          userId: 'sujeto-bruno',
+        })
+
+      expect(response.status).toBe(200)
+      expect(response.body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ content: 'Mensaje privado de Ana.' })]),
+      )
+      expect(response.body).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ content: 'Solo pertenece a Bruno.' })]),
+      )
+      expect(
+        (
+          await request(app.getHttpServer())
+            .get('/api/me/posts/sujeto-bruno')
+            .set('Authorization', bearer('token-ana'))
+        ).status,
+      ).toBe(404)
+    })
+  })
+
   describe('La moderacion exige rol de moderacion', () => {
     let threadId: string
     let postId: string

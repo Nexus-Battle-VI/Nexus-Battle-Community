@@ -8,7 +8,10 @@ import {
   ThreadId,
   ThreadTitle,
 } from '../../../domain/value-objects/community-values'
-import type { ThreadRepositoryPort } from '../../../application/ports/ThreadRepositoryPort'
+import type {
+  OwnedPostRecord,
+  ThreadRepositoryPort,
+} from '../../../application/ports/ThreadRepositoryPort'
 import type { ThreadSnapshot } from '../../../domain/entities/Thread'
 import type { Database } from './schema'
 import { toPostRows, toSnapshot, toThreadRow, type PostRow, type ThreadRow } from './mapping'
@@ -175,6 +178,23 @@ export class PostgresThreadRepository implements ThreadRepositoryPort {
     }
 
     return rows.map((row) => PostgresThreadRepository.hydrate(row, byThread.get(row.id) ?? []))
+  }
+
+  async findPostsByAuthor(authorId: AuthorId): Promise<readonly OwnedPostRecord[]> {
+    const rows = await this.db
+      .selectFrom('posts')
+      .select(['id', 'thread_id', 'content', 'created_at'])
+      .where('author_id', '=', authorId.value)
+      .orderBy('created_at')
+      .orderBy('id')
+      .execute()
+
+    return rows.map((row) => ({
+      id: row.id,
+      threadId: row.thread_id,
+      content: row.content,
+      createdAt: row.created_at.toISOString(),
+    }))
   }
 
   private static hydrate(row: ThreadRow, posts: readonly PostRow[]): Thread {

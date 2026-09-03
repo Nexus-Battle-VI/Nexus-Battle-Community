@@ -2,14 +2,23 @@ import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
 
 import { ThreadsController } from '../../adapters/inbound/http/threads.controller'
+import { MeController } from '../../adapters/inbound/http/me.controller'
+import { ProductCommentsController } from '../../adapters/inbound/http/product-comments.controller'
+import { CommentReportsController } from '../../adapters/inbound/http/comment-reports.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
+  GET_PRODUCT_REVIEW_SUMMARY,
   GET_THREAD,
   HIDE_POST,
+  LIST_PRODUCT_COMMENTS,
   LIST_THREADS,
+  LIST_OWN_POSTS,
   OPEN_THREAD,
   PUBLISH_POST,
+  PUBLISH_PRODUCT_COMMENT,
+  RATE_PRODUCT,
+  REPORT_COMMENT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -18,18 +27,46 @@ import {
   GetThread,
   HidePost,
   ListThreads,
+  ListOwnPosts,
   OpenThread,
   PublishPost,
 } from '../../application/use-cases/ThreadUseCases'
+import {
+  ListProductComments,
+  PublishProductComment,
+} from '../../application/use-cases/ProductCommentUseCases'
+import {
+  GetProductReviewSummary,
+  RateProduct,
+} from '../../application/use-cases/ProductReviewUseCases'
+import { ReportComment } from '../../application/use-cases/CommentReportUseCases'
 import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
+import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
+import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
+import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
+import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
+import type { ProductCommentRepositoryPort } from '../../application/ports/ProductCommentRepositoryPort'
+import type { ProductReviewRepositoryPort } from '../../application/ports/ProductReviewRepositoryPort'
+import type { ProductExistencePort } from '../../application/ports/ProductExistencePort'
+import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
 import { InMemoryThreadRepository } from '../../adapters/outbound/persistence/InMemoryThreadRepository'
 import { PostgresThreadRepository } from '../../adapters/outbound/persistence/PostgresThreadRepository'
+import { InMemoryProductCommentRepository } from '../../adapters/outbound/persistence/InMemoryProductCommentRepository'
+import { PostgresProductCommentRepository } from '../../adapters/outbound/persistence/PostgresProductCommentRepository'
+import { InMemoryProductReviewRepository } from '../../adapters/outbound/persistence/InMemoryProductReviewRepository'
+import { PostgresProductReviewRepository } from '../../adapters/outbound/persistence/PostgresProductReviewRepository'
+import { InMemoryCommentReportRepository } from '../../adapters/outbound/persistence/InMemoryCommentReportRepository'
+import { PostgresCommentReportRepository } from '../../adapters/outbound/persistence/PostgresCommentReportRepository'
+import {
+  LocalProductCatalog,
+  DEMO_PRODUCT_IDS,
+} from '../../adapters/outbound/existence/LocalProductCatalog'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 
@@ -64,7 +101,13 @@ export const LOGGER = Symbol('Logger')
  * framework.
  */
 @Module({
-  controllers: [ThreadsController, HealthController],
+  controllers: [
+    ThreadsController,
+    MeController,
+    ProductCommentsController,
+    CommentReportsController,
+    HealthController,
+  ],
   providers: [
     {
       provide: APP_CONFIG,
@@ -107,6 +150,66 @@ export const LOGGER = Symbol('Logger')
         )
       },
       inject: [APP_CONFIG, LOGGER],
+    },
+    {
+      // Comparte driver con THREAD_REPOSITORY: si el servicio corre sobre
+      // PostgreSQL, todos sus repositorios lo hacen.
+      provide: PRODUCT_COMMENT_REPOSITORY,
+      useFactory: (config: AppConfig): ProductCommentRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryProductCommentRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresProductCommentRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: PRODUCT_REVIEW_REPOSITORY,
+      useFactory: (config: AppConfig): ProductReviewRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryProductReviewRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresProductReviewRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      // Catalogo local, mismo patron que `LocalCatalogPricing` en Commerce.
+      // Ver ProductExistencePort para la brecha de identificador que justifica
+      // no llamar en vivo a Nexus-Battle-Catalog todavia.
+      provide: PRODUCT_EXISTENCE,
+      useFactory: (): ProductExistencePort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
+    },
+    {
+      provide: COMMENT_REPORT_REPOSITORY,
+      useFactory: (config: AppConfig): CommentReportRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryCommentReportRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresCommentReportRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
     },
     {
       provide: TOKEN_VERIFIER,
@@ -261,6 +364,68 @@ export const LOGGER = Symbol('Logger')
       provide: LIST_THREADS,
       useFactory: (threads: ThreadRepositoryPort): ListThreads => new ListThreads(threads),
       inject: [THREAD_REPOSITORY],
+    },
+    {
+      provide: LIST_OWN_POSTS,
+      useFactory: (threads: ThreadRepositoryPort): ListOwnPosts => new ListOwnPosts(threads),
+      inject: [THREAD_REPOSITORY],
+    },
+    {
+      provide: PUBLISH_PRODUCT_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        catalog: ProductExistencePort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): PublishProductComment => new PublishProductComment({ comments, catalog, clock, ids }),
+      inject: [PRODUCT_COMMENT_REPOSITORY, PRODUCT_EXISTENCE, CLOCK, ID_GENERATOR],
+    },
+    {
+      provide: LIST_PRODUCT_COMMENTS,
+      useFactory: (comments: ProductCommentRepositoryPort): ListProductComments =>
+        new ListProductComments(comments),
+      inject: [PRODUCT_COMMENT_REPOSITORY],
+    },
+    {
+      provide: RATE_PRODUCT,
+      useFactory: (
+        reviews: ProductReviewRepositoryPort,
+        catalog: ProductExistencePort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): RateProduct => new RateProduct({ reviews, catalog, clock, ids }),
+      inject: [PRODUCT_REVIEW_REPOSITORY, PRODUCT_EXISTENCE, CLOCK, ID_GENERATOR],
+    },
+    {
+      provide: GET_PRODUCT_REVIEW_SUMMARY,
+      useFactory: (reviews: ProductReviewRepositoryPort): GetProductReviewSummary =>
+        new GetProductReviewSummary(reviews),
+      inject: [PRODUCT_REVIEW_REPOSITORY],
+    },
+    {
+      provide: REPORT_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        reports: CommentReportRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+        config: AppConfig,
+      ): ReportComment =>
+        new ReportComment({
+          comments,
+          reports,
+          clock,
+          ids,
+          reportLimit: config.commentReportLimit,
+          reportWindowHours: config.commentReportWindowHours,
+        }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_REPORT_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+        APP_CONFIG,
+      ],
     },
     {
       provide: READINESS_CHECKS,

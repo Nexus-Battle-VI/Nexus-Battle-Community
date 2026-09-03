@@ -59,7 +59,67 @@ export interface PostsTable {
   readonly created_at: Date
 }
 
+/**
+ * Comentarios de producto.
+ *
+ * Fila propia, sin padre: a diferencia de `posts`, no hay agregado `Thread`
+ * que las contenga ni tope de mensajes por hilo que aplicarles. HU-40 exige
+ * explicitamente que no exista un limite maximo de comentarios por producto.
+ */
+export interface ProductCommentsTable {
+  readonly id: string
+
+  /**
+   * Referencia a un producto de Catalog. Sin clave foranea: es un
+   * identificador de OTRO servicio, igual que `author_id`.
+   */
+  readonly product_id: string
+
+  readonly author_id: string
+  readonly content: string
+
+  /** Referencias de imagen, nunca el binario. Vacio cuando no hay ninguna. */
+  readonly images: string[]
+
+  readonly created_at: Date
+}
+
+/**
+ * Calificacion de un jugador sobre un producto.
+ *
+ * La restriccion `UNIQUE (product_id, author_id)` es la que hace cumplir "una
+ * calificacion por jugador y producto" incluso ante dos solicitudes
+ * concurrentes: la comprobacion previa en el caso de uso no basta por si sola.
+ */
+export interface ProductReviewsTable {
+  readonly id: string
+  readonly product_id: string
+  readonly author_id: string
+  readonly rating: number
+  readonly created_at: Date
+}
+
+/**
+ * Reportes de comentario (HU-46).
+ *
+ * Sin clave foranea a `product_comments`: es una referencia DENTRO del mismo
+ * servicio, pero un reporte debe seguir existiendo como evidencia aunque el
+ * comentario reportado deje de estar disponible, y una clave foranea con
+ * `on delete cascade` lo borraria junto con el comentario.
+ */
+export interface CommentReportsTable {
+  readonly id: string
+  readonly comment_id: string
+  readonly author_id: string
+  readonly category: string
+  readonly description: string | null
+  readonly created_at: Date
+}
+
 export interface Database {
   readonly threads: ThreadsTable
   readonly posts: PostsTable
+  readonly product_comments: ProductCommentsTable
+  readonly product_reviews: ProductReviewsTable
+  readonly comment_reports: CommentReportsTable
 }

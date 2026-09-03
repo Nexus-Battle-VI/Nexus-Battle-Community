@@ -1,5 +1,12 @@
 import type { Thread } from '../../domain/entities/Thread'
-import type { ThreadId } from '../../domain/value-objects/community-values'
+import type { AuthorId, ThreadId } from '../../domain/value-objects/community-values'
+
+export interface OwnedPostRecord {
+  readonly id: string
+  readonly threadId: string
+  readonly content: string
+  readonly createdAt: string
+}
 
 /**
  * Puerto de persistencia del agregado Thread.
@@ -18,6 +25,7 @@ export interface ThreadRepositoryPort {
   save(thread: Thread): Promise<void>
   findById(id: ThreadId): Promise<Thread | null>
   list(): Promise<readonly Thread[]>
+  findPostsByAuthor(authorId: AuthorId): Promise<readonly OwnedPostRecord[]>
 }
 
 export const THREAD_REPOSITORY = Symbol('ThreadRepositoryPort')

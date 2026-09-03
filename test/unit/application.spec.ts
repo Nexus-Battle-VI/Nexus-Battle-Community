@@ -2,6 +2,7 @@ import {
   CloseThread,
   GetThread,
   HidePost,
+  ListOwnPosts,
   ListThreads,
   OpenThread,
   PublishPost,
@@ -33,6 +34,7 @@ interface Harness {
   close: CloseThread
   get: GetThread
   list: ListThreads
+  listOwnPosts: ListOwnPosts
 }
 
 const sequence = (prefix: string): (() => string) => {
@@ -61,6 +63,7 @@ const buildHarness = (): Harness => {
     close: new CloseThread(deps),
     get: new GetThread(threads),
     list: new ListThreads(threads),
+    listOwnPosts: new ListOwnPosts(threads),
   }
 }
 
@@ -273,6 +276,47 @@ describe('GetThread y ListThreads', () => {
 
   it('devuelve una lista vacia cuando no hay hilos', async () => {
     expect(await buildHarness().list.execute()).toEqual([])
+  })
+})
+
+describe('ListOwnPosts', () => {
+  it('devuelve solo los mensajes del titular, incluidos los ocultos, sin modificar datos', async () => {
+    const harness = buildHarness()
+    const thread = await harness.open.execute(openCommand)
+    const own = await harness.publish.execute({
+      threadId: thread.id,
+      authorId: 'acc-1',
+      content: 'Mensaje propio ocultado',
+    })
+    await harness.publish.execute({
+      threadId: thread.id,
+      authorId: 'acc-2',
+      content: 'Mensaje de otra persona',
+    })
+    await harness.hide.execute({
+      threadId: thread.id,
+      postId: own.posts[0]?.id ?? '',
+      moderatorId: 'acc-mod',
+    })
+    const before = (await harness.threads.findById(ThreadId.create(thread.id)))?.toSnapshot()
+
+    const result = await harness.listOwnPosts.execute('acc-1')
+
+    expect(result).toEqual([
+      {
+        id: own.posts[0]?.id,
+        threadId: thread.id,
+        content: 'Mensaje propio ocultado',
+        createdAt: FIXED_NOW.toISOString(),
+      },
+    ])
+    expect((await harness.threads.findById(ThreadId.create(thread.id)))?.toSnapshot()).toEqual(
+      before,
+    )
+  })
+
+  it('devuelve una lista vacia cuando el titular no tiene mensajes', async () => {
+    expect(await buildHarness().listOwnPosts.execute('acc-sin-mensajes')).toEqual([])
   })
 })
 
