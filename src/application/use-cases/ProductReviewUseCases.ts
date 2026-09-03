@@ -9,6 +9,7 @@ import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
 import type { ProductExistencePort } from '../ports/ProductExistencePort'
 import type { ProductReviewRepositoryPort } from '../ports/ProductReviewRepositoryPort'
+import type { ProductRatingPublisherPort } from '../ports/ProductRatingPublisherPort'
 import { DuplicateProductReviewError, ProductNotFoundError } from '../errors/ApplicationError'
 import {
   toProductReviewDto,
@@ -22,6 +23,13 @@ export interface ProductReviewDependencies {
   readonly catalog: ProductExistencePort
   readonly clock: ClockPort
   readonly ids: IdGeneratorPort
+  /**
+   * Empuja el promedio recalculado hacia Catalog (HU-40, CA-03) tras cada
+   * calificacion nueva. Opcional: sin el, `RateProduct` sigue siendo
+   * plenamente funcional -el promedio que ve un jugador en Community nunca
+   * depende de esta llamada-, solo Catalog deja de mostrar el agregado.
+   */
+  readonly ratingPublisher?: ProductRatingPublisherPort
 }
 
 export interface RateProductCommand {
@@ -69,6 +77,18 @@ export class RateProduct {
     })
 
     await this.deps.reviews.save(review)
+
+    // Se recalcula y se empuja DESPUES de guardar, nunca antes: el agregado
+    // que Catalog recibe debe incluir la calificacion que se acaba de
+    // registrar, y solo tiene sentido publicarlo una vez el guardado es
+    // irreversible.
+    if (this.deps.ratingPublisher !== undefined) {
+      const summary = await this.deps.reviews.summaryFor(productId)
+      await this.deps.ratingPublisher.publish(productId.value, {
+        averageRating: summary.average,
+        reviewCount: summary.count,
+      })
+    }
 
     return toProductReviewDto(review.toSnapshot())
   }
