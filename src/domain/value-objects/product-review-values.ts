@@ -5,9 +5,18 @@ import { DomainError } from '../errors/DomainError'
  *
  * Es una referencia a OTRO servicio, igual que `AuthorId` lo es a Account: no
  * lleva clave foranea ni valida contra ninguna base de datos ajena. Que el
- * producto exista lo comprueba `ProductCatalogPort`, no este objeto de valor.
+ * producto exista lo comprueba `ProductExistencePort`, no este objeto de valor.
+ *
+ * El patron UUID es el MISMO que exige `ProductId` en `Nexus-Battle-Catalog`
+ * (`canonical-product-values.ts`): las dos definiciones se duplican a
+ * proposito -- un paquete compartido acoplaria los servicios -- pero deben
+ * reconocer exactamente el mismo formato, porque describen el mismo
+ * identificador visto desde dos bounded contexts distintos.
  */
 export class ProductId {
+  private static readonly UUID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
   readonly value: string
 
   private constructor(value: string) {
@@ -15,10 +24,10 @@ export class ProductId {
   }
 
   static create(raw: string): ProductId {
-    const normalized = raw.trim()
+    const normalized = raw.trim().toLowerCase()
 
-    if (normalized.length === 0) {
-      throw new DomainError('El identificador del producto no puede estar vacio.')
+    if (!ProductId.UUID_PATTERN.test(normalized)) {
+      throw new DomainError(`El productId "${raw}" no es un UUID valido.`)
     }
 
     return new ProductId(normalized)

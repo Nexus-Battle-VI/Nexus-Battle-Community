@@ -43,7 +43,7 @@ import {
   ProductReviewSummaryResponse,
   PublishProductCommentRequest,
   RateProductRequest,
-} from './products.dto'
+} from './product-comments.dto'
 import { CurrentIdentity, Public } from './auth/decorators'
 import type { VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 
@@ -58,7 +58,7 @@ import type { VerifiedIdentity } from '../../../application/ports/TokenVerifierP
 @ApiTags('products')
 @ApiBearerAuth()
 @Controller('products')
-export class ProductsController {
+export class ProductCommentsController {
   constructor(
     @Inject(PUBLISH_PRODUCT_COMMENT) private readonly publishComment: PublishProductComment,
     @Inject(LIST_PRODUCT_COMMENTS) private readonly listComments: ListProductComments,
@@ -86,7 +86,7 @@ export class ProductsController {
         images: body.images,
       })
     } catch (error: unknown) {
-      throw ProductsController.translate(error)
+      throw ProductCommentsController.translate(error)
     }
   }
 
@@ -123,7 +123,7 @@ export class ProductsController {
         rating: body.rating,
       })
     } catch (error: unknown) {
-      throw ProductsController.translate(error)
+      throw ProductCommentsController.translate(error)
     }
   }
 

@@ -1,5 +1,7 @@
 import 'reflect-metadata'
 
+import { randomUUID } from 'node:crypto'
+
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import type { Kysely } from 'kysely'
 
@@ -41,11 +43,7 @@ describe('Persistencia de comentarios y calificaciones de producto', () => {
   const AT = new Date('2026-09-02T10:00:00.000Z')
   let contador = 0
 
-  const nextProductId = (): ProductId => {
-    contador += 1
-
-    return ProductId.create(`producto-${String(contador)}`)
-  }
+  const nextProductId = (): ProductId => ProductId.create(randomUUID())
 
   const buildComment = (
     productId: ProductId,

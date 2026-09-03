@@ -10,8 +10,8 @@
  * `LocalCatalogPricing` en Commerce): un adaptador completo sobre datos en
  * memoria, no una simulacion del servicio real.
  */
-export interface ProductCatalogPort {
+export interface ProductExistencePort {
   exists(productId: string): Promise<boolean>
 }
 
-export const PRODUCT_CATALOG = Symbol('ProductCatalogPort')
+export const PRODUCT_EXISTENCE = Symbol('ProductExistencePort')

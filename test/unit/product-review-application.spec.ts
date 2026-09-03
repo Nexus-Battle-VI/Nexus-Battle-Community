@@ -7,14 +7,15 @@ import {
   DuplicateProductReviewError,
   ProductNotFoundError,
 } from '../../src/application/errors/ApplicationError'
-import type { ProductCatalogPort } from '../../src/application/ports/ProductCatalogPort'
+import type { ProductExistencePort } from '../../src/application/ports/ProductExistencePort'
 import { InMemoryProductCommentRepository } from '../../src/adapters/outbound/persistence/InMemoryProductCommentRepository'
 import { InMemoryProductReviewRepository } from '../../src/adapters/outbound/persistence/InMemoryProductReviewRepository'
 import { DomainError } from '../../src/domain/errors/DomainError'
 
 const FIXED_NOW = new Date('2026-09-02T10:00:00.000Z')
-const PRODUCTO = 'producto-1'
-const OTRO_PRODUCTO = 'producto-2'
+const PRODUCTO = '3f2a1e4c-6b7d-4a8e-9c1f-2d3e4f5a6b7c'
+const OTRO_PRODUCTO = '7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d'
+const PRODUCTO_INEXISTENTE = '00000000-0000-4000-8000-000000000000'
 
 const sequence = (prefix: string): (() => string) => {
   let counter = 0
@@ -26,7 +27,7 @@ const sequence = (prefix: string): (() => string) => {
   }
 }
 
-const fakeCatalog = (known: readonly string[]): ProductCatalogPort => ({
+const fakeCatalog = (known: readonly string[]): ProductExistencePort => ({
   exists: (productId: string): Promise<boolean> => Promise.resolve(known.includes(productId)),
 })
 
@@ -91,7 +92,7 @@ describe('PublishProductComment', () => {
     const harness = buildHarness()
 
     await expect(
-      harness.publish.execute({ productId: 'inexistente', authorId: 'acc-1', content: 'Hola' }),
+      harness.publish.execute({ productId: PRODUCTO_INEXISTENTE, authorId: 'acc-1', content: 'Hola' }),
     ).rejects.toBeInstanceOf(ProductNotFoundError)
     expect(harness.comments.size).toBe(0)
   })
@@ -194,7 +195,7 @@ describe('RateProduct', () => {
     const harness = buildHarness()
 
     await expect(
-      harness.rate.execute({ productId: 'inexistente', authorId: 'acc-1', rating: 5 }),
+      harness.rate.execute({ productId: PRODUCTO_INEXISTENTE, authorId: 'acc-1', rating: 5 }),
     ).rejects.toBeInstanceOf(ProductNotFoundError)
   })
 

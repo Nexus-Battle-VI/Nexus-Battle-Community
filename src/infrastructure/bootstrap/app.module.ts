@@ -3,7 +3,7 @@ import { APP_GUARD, Reflector } from '@nestjs/core'
 
 import { ThreadsController } from '../../adapters/inbound/http/threads.controller'
 import { MeController } from '../../adapters/inbound/http/me.controller'
-import { ProductsController } from '../../adapters/inbound/http/products.controller'
+import { ProductCommentsController } from '../../adapters/inbound/http/product-comments.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
@@ -40,13 +40,13 @@ import {
 import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
 import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
 import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
-import { PRODUCT_CATALOG } from '../../application/ports/ProductCatalogPort'
+import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
 import type { ProductCommentRepositoryPort } from '../../application/ports/ProductCommentRepositoryPort'
 import type { ProductReviewRepositoryPort } from '../../application/ports/ProductReviewRepositoryPort'
-import type { ProductCatalogPort } from '../../application/ports/ProductCatalogPort'
+import type { ProductExistencePort } from '../../application/ports/ProductExistencePort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
@@ -59,7 +59,7 @@ import { PostgresProductReviewRepository } from '../../adapters/outbound/persist
 import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
-} from '../../adapters/outbound/catalog/LocalProductCatalog'
+} from '../../adapters/outbound/existence/LocalProductCatalog'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 
@@ -87,7 +87,7 @@ export const LOGGER = Symbol('Logger')
  * framework.
  */
 @Module({
-  controllers: [ThreadsController, MeController, ProductsController, HealthController],
+  controllers: [ThreadsController, MeController, ProductCommentsController, HealthController],
   providers: [
     {
       provide: APP_CONFIG,
@@ -169,10 +169,10 @@ export const LOGGER = Symbol('Logger')
     },
     {
       // Catalogo local, mismo patron que `LocalCatalogPricing` en Commerce.
-      // Ver ProductCatalogPort para la brecha de identificador que justifica
+      // Ver ProductExistencePort para la brecha de identificador que justifica
       // no llamar en vivo a Nexus-Battle-Catalog todavia.
-      provide: PRODUCT_CATALOG,
-      useFactory: (): ProductCatalogPort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
+      provide: PRODUCT_EXISTENCE,
+      useFactory: (): ProductExistencePort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
     },
     {
       provide: TOKEN_VERIFIER,
@@ -285,11 +285,11 @@ export const LOGGER = Symbol('Logger')
       provide: PUBLISH_PRODUCT_COMMENT,
       useFactory: (
         comments: ProductCommentRepositoryPort,
-        catalog: ProductCatalogPort,
+        catalog: ProductExistencePort,
         clock: ClockPort,
         ids: IdGeneratorPort,
       ): PublishProductComment => new PublishProductComment({ comments, catalog, clock, ids }),
-      inject: [PRODUCT_COMMENT_REPOSITORY, PRODUCT_CATALOG, CLOCK, ID_GENERATOR],
+      inject: [PRODUCT_COMMENT_REPOSITORY, PRODUCT_EXISTENCE, CLOCK, ID_GENERATOR],
     },
     {
       provide: LIST_PRODUCT_COMMENTS,
@@ -301,11 +301,11 @@ export const LOGGER = Symbol('Logger')
       provide: RATE_PRODUCT,
       useFactory: (
         reviews: ProductReviewRepositoryPort,
-        catalog: ProductCatalogPort,
+        catalog: ProductExistencePort,
         clock: ClockPort,
         ids: IdGeneratorPort,
       ): RateProduct => new RateProduct({ reviews, catalog, clock, ids }),
-      inject: [PRODUCT_REVIEW_REPOSITORY, PRODUCT_CATALOG, CLOCK, ID_GENERATOR],
+      inject: [PRODUCT_REVIEW_REPOSITORY, PRODUCT_EXISTENCE, CLOCK, ID_GENERATOR],
     },
     {
       provide: GET_PRODUCT_REVIEW_SUMMARY,

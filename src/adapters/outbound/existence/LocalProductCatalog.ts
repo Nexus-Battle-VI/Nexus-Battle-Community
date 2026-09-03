@@ -1,4 +1,4 @@
-import type { ProductCatalogPort } from '../../../application/ports/ProductCatalogPort'
+import type { ProductExistencePort } from '../../../application/ports/ProductExistencePort'
 
 /**
  * Catalogo de productos local.
@@ -14,7 +14,7 @@ import type { ProductCatalogPort } from '../../../application/ports/ProductCatal
  * datos de Catalog. Esa prohibicion es la que mantiene el limite entre ambos
  * servicios.
  */
-export class LocalProductCatalog implements ProductCatalogPort {
+export class LocalProductCatalog implements ProductExistencePort {
   private readonly productIds: ReadonlySet<string>
 
   constructor(productIds: readonly string[]) {

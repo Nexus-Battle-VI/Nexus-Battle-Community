@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing'
 import request from 'supertest'
 
 import { AppModule } from '../../src/infrastructure/bootstrap/app.module'
-import { DEMO_PRODUCT_IDS } from '../../src/adapters/outbound/catalog/LocalProductCatalog'
+import { DEMO_PRODUCT_IDS } from '../../src/adapters/outbound/existence/LocalProductCatalog'
 
 /**
  * Pruebas de integracion sobre la aplicacion NestJS real, con
@@ -21,6 +21,10 @@ describe('API de comentarios y calificaciones de producto', () => {
   if (PRODUCTO === undefined || OTRO_PRODUCTO === undefined) {
     throw new Error('LocalProductCatalog necesita al menos dos productos de demostracion.')
   }
+
+  // UUID con formato valido pero ausente de DEMO_PRODUCT_IDS: distingue "mal
+  // formado" (400) de "bien formado pero inexistente en el catalogo" (404).
+  const PRODUCTO_INEXISTENTE = '00000000-0000-4000-8000-000000000000'
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
@@ -90,7 +94,7 @@ describe('API de comentarios y calificaciones de producto', () => {
   })
 
   it('responde 404 al comentar un producto inexistente', async () => {
-    expect((await publish('producto-inexistente', { content: 'Hola' })).status).toBe(404)
+    expect((await publish(PRODUCTO_INEXISTENTE, { content: 'Hola' })).status).toBe(404)
   })
 
   it('rechaza un intento de declarar el autor en la peticion', async () => {
@@ -144,7 +148,7 @@ describe('API de comentarios y calificaciones de producto', () => {
   })
 
   it('responde 404 al calificar un producto inexistente', async () => {
-    expect((await rate('producto-inexistente', 3)).status).toBe(404)
+    expect((await rate(PRODUCTO_INEXISTENTE, 3)).status).toBe(404)
   })
 
   it('actualiza la calificacion promedio del producto', async () => {

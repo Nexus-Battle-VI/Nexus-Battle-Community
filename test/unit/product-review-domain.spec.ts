@@ -14,21 +14,38 @@ import { DomainError } from '../../src/domain/errors/DomainError'
 
 const AT = new Date('2026-09-02T10:00:00.000Z')
 
-describe('ProductId, ProductCommentId, ProductReviewId', () => {
+const PRODUCTO_UUID = '3f2a1e4c-6b7d-4a8e-9c1f-2d3e4f5a6b7c'
+
+describe('ProductCommentId, ProductReviewId', () => {
   it.each([
-    ['ProductId', ProductId],
     ['ProductCommentId', ProductCommentId],
     ['ProductReviewId', ProductReviewId],
   ])('%s rechaza un valor vacio', (_nombre, Type) => {
     expect(() => Type.create('   ')).toThrow(DomainError)
   })
+})
 
-  it('recorta espacios y compara por valor', () => {
-    const a = ProductId.create('  producto-1  ')
-    const b = ProductId.create('producto-1')
+describe('ProductId', () => {
+  /**
+   * El MISMO patron UUID que `ProductId` exige en `Nexus-Battle-Catalog`:
+   * ambos describen el mismo identificador, visto desde dos servicios.
+   */
+  it('acepta un UUID valido y lo normaliza a minusculas', () => {
+    const a = ProductId.create(`  ${PRODUCTO_UUID.toUpperCase()}  `)
+    const b = ProductId.create(PRODUCTO_UUID)
 
-    expect(a.value).toBe('producto-1')
+    expect(a.value).toBe(PRODUCTO_UUID)
     expect(a.equals(b)).toBe(true)
+  })
+
+  it.each([
+    ['esta vacio', '   '],
+    ['no es un UUID', 'producto-1'],
+    ['le falta un segmento', '3f2a1e4c-6b7d-4a8e-9c1f'],
+    ['tiene el nibble de version fuera de rango', '3f2a1e4c-6b7d-6a8e-9c1f-2d3e4f5a6b7c'],
+    ['tiene el nibble de variante fuera de rango', '3f2a1e4c-6b7d-4a8e-1c1f-2d3e4f5a6b7c'],
+  ])('rechaza un identificador que %s', (_caso, raw) => {
+    expect(() => ProductId.create(raw)).toThrow(DomainError)
   })
 })
 
@@ -89,7 +106,7 @@ describe('ProductComment', () => {
   const publish = (images: readonly string[] = []): ProductComment =>
     ProductComment.publish({
       id: ProductCommentId.create('comment-1'),
-      productId: ProductId.create('producto-1'),
+      productId: ProductId.create(PRODUCTO_UUID),
       authorId: AuthorId.create('acc-1'),
       content: CommentContent.create('Buen producto, cumple lo prometido.'),
       images: images.map((image) => ImageReference.create(image)),
@@ -101,7 +118,7 @@ describe('ProductComment', () => {
 
     expect(comment.toSnapshot()).toEqual({
       id: 'comment-1',
-      productId: 'producto-1',
+      productId: PRODUCTO_UUID,
       authorId: 'acc-1',
       content: 'Buen producto, cumple lo prometido.',
       images: [],
@@ -127,7 +144,7 @@ describe('ProductComment', () => {
   it('restore reconstruye el mismo estado sin repetir la validacion de negocio', () => {
     const restored = ProductComment.restore({
       id: ProductCommentId.create('comment-1'),
-      productId: ProductId.create('producto-1'),
+      productId: ProductId.create(PRODUCTO_UUID),
       authorId: AuthorId.create('acc-1'),
       content: CommentContent.create('Restaurado desde el almacen.'),
       images: [],
@@ -142,7 +159,7 @@ describe('ProductReview', () => {
   it('crea y serializa una calificacion valida', () => {
     const review = ProductReview.create({
       id: ProductReviewId.create('review-1'),
-      productId: ProductId.create('producto-1'),
+      productId: ProductId.create(PRODUCTO_UUID),
       authorId: AuthorId.create('acc-1'),
       rating: Rating.create(5),
       occurredAt: AT,
@@ -150,7 +167,7 @@ describe('ProductReview', () => {
 
     expect(review.toSnapshot()).toEqual({
       id: 'review-1',
-      productId: 'producto-1',
+      productId: PRODUCTO_UUID,
       authorId: 'acc-1',
       rating: 5,
       createdAt: AT.toISOString(),

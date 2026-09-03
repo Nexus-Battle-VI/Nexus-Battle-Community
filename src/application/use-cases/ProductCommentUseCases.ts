@@ -8,7 +8,7 @@ import {
 } from '../../domain/value-objects/product-review-values'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
-import type { ProductCatalogPort } from '../ports/ProductCatalogPort'
+import type { ProductExistencePort } from '../ports/ProductExistencePort'
 import type { ProductCommentRepositoryPort } from '../ports/ProductCommentRepositoryPort'
 import { ProductNotFoundError } from '../errors/ApplicationError'
 import {
@@ -19,7 +19,7 @@ import {
 
 export interface ProductCommentDependencies {
   readonly comments: ProductCommentRepositoryPort
-  readonly catalog: ProductCatalogPort
+  readonly catalog: ProductExistencePort
   readonly clock: ClockPort
   readonly ids: IdGeneratorPort
 }
@@ -32,7 +32,7 @@ export interface PublishProductCommentCommand {
 }
 
 const ensureProductExists = async (
-  catalog: ProductCatalogPort,
+  catalog: ProductExistencePort,
   productId: ProductId,
 ): Promise<void> => {
   if (!(await catalog.exists(productId.value))) {

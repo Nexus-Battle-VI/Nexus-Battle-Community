@@ -7,7 +7,7 @@ import {
 } from '../../domain/value-objects/product-review-values'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
-import type { ProductCatalogPort } from '../ports/ProductCatalogPort'
+import type { ProductExistencePort } from '../ports/ProductExistencePort'
 import type { ProductReviewRepositoryPort } from '../ports/ProductReviewRepositoryPort'
 import { DuplicateProductReviewError, ProductNotFoundError } from '../errors/ApplicationError'
 import {
@@ -19,7 +19,7 @@ import {
 
 export interface ProductReviewDependencies {
   readonly reviews: ProductReviewRepositoryPort
-  readonly catalog: ProductCatalogPort
+  readonly catalog: ProductExistencePort
   readonly clock: ClockPort
   readonly ids: IdGeneratorPort
 }
