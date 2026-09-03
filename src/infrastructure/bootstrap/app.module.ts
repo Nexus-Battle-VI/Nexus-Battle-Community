@@ -5,6 +5,7 @@ import { ThreadsController } from '../../adapters/inbound/http/threads.controlle
 import { MeController } from '../../adapters/inbound/http/me.controller'
 import { ProductCommentsController } from '../../adapters/inbound/http/product-comments.controller'
 import { CommentReportsController } from '../../adapters/inbound/http/comment-reports.controller'
+import { CommentModerationController } from '../../adapters/inbound/http/comment-moderation.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
@@ -19,6 +20,12 @@ import {
   PUBLISH_PRODUCT_COMMENT,
   RATE_PRODUCT,
   REPORT_COMMENT,
+  LIST_MODERATION_QUEUE,
+  APPROVE_COMMENT,
+  HIDE_COMMENT,
+  DELETE_COMMENT,
+  EDIT_COMMENT,
+  MARK_COMMENT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -40,11 +47,20 @@ import {
   RateProduct,
 } from '../../application/use-cases/ProductReviewUseCases'
 import { ReportComment } from '../../application/use-cases/CommentReportUseCases'
+import {
+  ApproveComment,
+  DeleteComment,
+  EditComment,
+  HideComment,
+  ListModerationQueue,
+  MarkComment,
+} from '../../application/use-cases/CommentModerationUseCases'
 import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
 import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
 import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
 import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
 import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
+import { COMMENT_MODERATION_ACTION_REPOSITORY } from '../../application/ports/CommentModerationActionRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
@@ -52,6 +68,7 @@ import type { ProductCommentRepositoryPort } from '../../application/ports/Produ
 import type { ProductReviewRepositoryPort } from '../../application/ports/ProductReviewRepositoryPort'
 import type { ProductExistencePort } from '../../application/ports/ProductExistencePort'
 import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
+import type { CommentModerationActionRepositoryPort } from '../../application/ports/CommentModerationActionRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
@@ -63,6 +80,8 @@ import { InMemoryProductReviewRepository } from '../../adapters/outbound/persist
 import { PostgresProductReviewRepository } from '../../adapters/outbound/persistence/PostgresProductReviewRepository'
 import { InMemoryCommentReportRepository } from '../../adapters/outbound/persistence/InMemoryCommentReportRepository'
 import { PostgresCommentReportRepository } from '../../adapters/outbound/persistence/PostgresCommentReportRepository'
+import { InMemoryCommentModerationActionRepository } from '../../adapters/outbound/persistence/InMemoryCommentModerationActionRepository'
+import { PostgresCommentModerationActionRepository } from '../../adapters/outbound/persistence/PostgresCommentModerationActionRepository'
 import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
@@ -99,6 +118,7 @@ export const LOGGER = Symbol('Logger')
     MeController,
     ProductCommentsController,
     CommentReportsController,
+    CommentModerationController,
     HealthController,
   ],
   providers: [
@@ -199,6 +219,23 @@ export const LOGGER = Symbol('Logger')
         }
 
         return new PostgresCommentReportRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: COMMENT_MODERATION_ACTION_REPOSITORY,
+      useFactory: (config: AppConfig): CommentModerationActionRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryCommentModerationActionRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresCommentModerationActionRepository(
           createDatabase({ connectionString: config.databaseUrl }),
         )
       },
@@ -366,6 +403,89 @@ export const LOGGER = Symbol('Logger')
         CLOCK,
         ID_GENERATOR,
         APP_CONFIG,
+      ],
+    },
+    {
+      provide: LIST_MODERATION_QUEUE,
+      useFactory: (
+        reports: CommentReportRepositoryPort,
+        comments: ProductCommentRepositoryPort,
+      ): ListModerationQueue => new ListModerationQueue({ reports, comments }),
+      inject: [COMMENT_REPORT_REPOSITORY, PRODUCT_COMMENT_REPOSITORY],
+    },
+    {
+      provide: APPROVE_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): ApproveComment => new ApproveComment({ comments, actions, clock, ids }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+      ],
+    },
+    {
+      provide: HIDE_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): HideComment => new HideComment({ comments, actions, clock, ids }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+      ],
+    },
+    {
+      provide: DELETE_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): DeleteComment => new DeleteComment({ comments, actions, clock, ids }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+      ],
+    },
+    {
+      provide: EDIT_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): EditComment => new EditComment({ comments, actions, clock, ids }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+      ],
+    },
+    {
+      provide: MARK_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+      ): MarkComment => new MarkComment({ comments, actions, clock, ids }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
       ],
     },
     {

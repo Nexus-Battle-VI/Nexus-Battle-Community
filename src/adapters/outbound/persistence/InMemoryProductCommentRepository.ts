@@ -67,6 +67,7 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
       content: CommentContent.create(snapshot.content),
       images: snapshot.images.map((image) => ImageReference.create(image)),
       createdAt: new Date(snapshot.createdAt),
+      moderationStatus: snapshot.moderationStatus,
     })
   }
 }
