@@ -30,6 +30,14 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
     return Promise.resolve()
   }
 
+  findById(commentId: ProductCommentId): Promise<ProductComment | null> {
+    const snapshot = this.byId.get(commentId.value)
+
+    return Promise.resolve(
+      snapshot === undefined ? null : InMemoryProductCommentRepository.hydrate(snapshot),
+    )
+  }
+
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage> {
     const all = [...this.byId.values()]
       .filter((snapshot) => snapshot.productId === productId.value)

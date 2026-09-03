@@ -99,9 +99,27 @@ export interface ProductReviewsTable {
   readonly created_at: Date
 }
 
+/**
+ * Reportes de comentario (HU-46).
+ *
+ * Sin clave foranea a `product_comments`: es una referencia DENTRO del mismo
+ * servicio, pero un reporte debe seguir existiendo como evidencia aunque el
+ * comentario reportado deje de estar disponible, y una clave foranea con
+ * `on delete cascade` lo borraria junto con el comentario.
+ */
+export interface CommentReportsTable {
+  readonly id: string
+  readonly comment_id: string
+  readonly author_id: string
+  readonly category: string
+  readonly description: string | null
+  readonly created_at: Date
+}
+
 export interface Database {
   readonly threads: ThreadsTable
   readonly posts: PostsTable
   readonly product_comments: ProductCommentsTable
   readonly product_reviews: ProductReviewsTable
+  readonly comment_reports: CommentReportsTable
 }

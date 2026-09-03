@@ -40,6 +40,16 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
       .execute()
   }
 
+  async findById(commentId: ProductCommentId): Promise<ProductComment | null> {
+    const row = await this.db
+      .selectFrom('product_comments')
+      .selectAll()
+      .where('id', '=', commentId.value)
+      .executeTakeFirst()
+
+    return row === undefined ? null : PostgresProductCommentRepository.hydrate(row)
+  }
+
   async listByProduct(
     productId: ProductId,
     page: ListProductCommentsPage,

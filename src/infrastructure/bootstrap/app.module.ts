@@ -4,6 +4,7 @@ import { APP_GUARD, Reflector } from '@nestjs/core'
 import { ThreadsController } from '../../adapters/inbound/http/threads.controller'
 import { MeController } from '../../adapters/inbound/http/me.controller'
 import { ProductCommentsController } from '../../adapters/inbound/http/product-comments.controller'
+import { CommentReportsController } from '../../adapters/inbound/http/comment-reports.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
@@ -17,6 +18,7 @@ import {
   PUBLISH_POST,
   PUBLISH_PRODUCT_COMMENT,
   RATE_PRODUCT,
+  REPORT_COMMENT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -37,16 +39,19 @@ import {
   GetProductReviewSummary,
   RateProduct,
 } from '../../application/use-cases/ProductReviewUseCases'
+import { ReportComment } from '../../application/use-cases/CommentReportUseCases'
 import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
 import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
 import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
 import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
+import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
 import type { ProductCommentRepositoryPort } from '../../application/ports/ProductCommentRepositoryPort'
 import type { ProductReviewRepositoryPort } from '../../application/ports/ProductReviewRepositoryPort'
 import type { ProductExistencePort } from '../../application/ports/ProductExistencePort'
+import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
@@ -56,6 +61,8 @@ import { InMemoryProductCommentRepository } from '../../adapters/outbound/persis
 import { PostgresProductCommentRepository } from '../../adapters/outbound/persistence/PostgresProductCommentRepository'
 import { InMemoryProductReviewRepository } from '../../adapters/outbound/persistence/InMemoryProductReviewRepository'
 import { PostgresProductReviewRepository } from '../../adapters/outbound/persistence/PostgresProductReviewRepository'
+import { InMemoryCommentReportRepository } from '../../adapters/outbound/persistence/InMemoryCommentReportRepository'
+import { PostgresCommentReportRepository } from '../../adapters/outbound/persistence/PostgresCommentReportRepository'
 import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
@@ -87,7 +94,13 @@ export const LOGGER = Symbol('Logger')
  * framework.
  */
 @Module({
-  controllers: [ThreadsController, MeController, ProductCommentsController, HealthController],
+  controllers: [
+    ThreadsController,
+    MeController,
+    ProductCommentsController,
+    CommentReportsController,
+    HealthController,
+  ],
   providers: [
     {
       provide: APP_CONFIG,
@@ -173,6 +186,23 @@ export const LOGGER = Symbol('Logger')
       // no llamar en vivo a Nexus-Battle-Catalog todavia.
       provide: PRODUCT_EXISTENCE,
       useFactory: (): ProductExistencePort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
+    },
+    {
+      provide: COMMENT_REPORT_REPOSITORY,
+      useFactory: (config: AppConfig): CommentReportRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryCommentReportRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresCommentReportRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
     },
     {
       provide: TOKEN_VERIFIER,
@@ -312,6 +342,31 @@ export const LOGGER = Symbol('Logger')
       useFactory: (reviews: ProductReviewRepositoryPort): GetProductReviewSummary =>
         new GetProductReviewSummary(reviews),
       inject: [PRODUCT_REVIEW_REPOSITORY],
+    },
+    {
+      provide: REPORT_COMMENT,
+      useFactory: (
+        comments: ProductCommentRepositoryPort,
+        reports: CommentReportRepositoryPort,
+        clock: ClockPort,
+        ids: IdGeneratorPort,
+        config: AppConfig,
+      ): ReportComment =>
+        new ReportComment({
+          comments,
+          reports,
+          clock,
+          ids,
+          reportLimit: config.commentReportLimit,
+          reportWindowHours: config.commentReportWindowHours,
+        }),
+      inject: [
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_REPORT_REPOSITORY,
+        CLOCK,
+        ID_GENERATOR,
+        APP_CONFIG,
+      ],
     },
     {
       provide: READINESS_CHECKS,
