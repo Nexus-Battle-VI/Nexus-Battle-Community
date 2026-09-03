@@ -3,6 +3,12 @@ import type { PostSnapshot, ThreadSnapshot } from '../../../domain/entities/Thre
 import type { ProductCommentSnapshot } from '../../../domain/entities/ProductComment'
 import type { ProductReviewSnapshot } from '../../../domain/entities/ProductReview'
 import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
+import type { CommentModerationActionSnapshot } from '../../../domain/entities/CommentModerationAction'
+import {
+  isCommentModerationStatus,
+  isModerationAction,
+  type CommentModerationStatus,
+} from '../../../domain/value-objects/moderation-values'
 
 /**
  * Traduccion entre filas de PostgreSQL y la instantanea del agregado.
@@ -118,16 +124,26 @@ export interface ProductCommentRow {
   readonly content: string
   readonly images: string[]
   readonly created_at: Date
+  readonly moderation_status: string
 }
 
-export const toProductCommentSnapshot = (row: ProductCommentRow): ProductCommentSnapshot => ({
-  id: row.id,
-  productId: row.product_id,
-  authorId: row.author_id,
-  content: row.content,
-  images: row.images,
-  createdAt: row.created_at.toISOString(),
-})
+export const toProductCommentSnapshot = (row: ProductCommentRow): ProductCommentSnapshot => {
+  if (!isCommentModerationStatus(row.moderation_status)) {
+    throw new PersistenceMappingError(
+      `El comentario ${row.id} tiene un estado de moderacion desconocido: "${row.moderation_status}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    productId: row.product_id,
+    authorId: row.author_id,
+    content: row.content,
+    images: row.images,
+    createdAt: row.created_at.toISOString(),
+    moderationStatus: row.moderation_status,
+  }
+}
 
 export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCommentRow => {
   const createdAt = new Date(snapshot.createdAt)
@@ -144,6 +160,76 @@ export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCo
     author_id: snapshot.authorId,
     content: snapshot.content,
     images: [...snapshot.images],
+    created_at: createdAt,
+    moderation_status: snapshot.moderationStatus,
+  }
+}
+
+export interface CommentModerationActionRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly actor_id: string
+  readonly action: string
+  readonly reason: string
+  readonly previous_status: string
+  readonly new_status: string
+  readonly created_at: Date
+}
+
+const asModerationStatus = (
+  value: string,
+  contextId: string,
+  field: string,
+): CommentModerationStatus => {
+  if (!isCommentModerationStatus(value)) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${contextId} tiene un ${field} desconocido: "${value}".`,
+    )
+  }
+
+  return value
+}
+
+export const toCommentModerationActionSnapshot = (
+  row: CommentModerationActionRow,
+): CommentModerationActionSnapshot => {
+  if (!isModerationAction(row.action)) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${row.id} tiene una accion desconocida: "${row.action}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    actorId: row.actor_id,
+    action: row.action,
+    reason: row.reason,
+    previousStatus: asModerationStatus(row.previous_status, row.id, 'estado anterior'),
+    newStatus: asModerationStatus(row.new_status, row.id, 'estado nuevo'),
+    createdAt: row.created_at.toISOString(),
+  }
+}
+
+export const toCommentModerationActionRow = (
+  snapshot: CommentModerationActionSnapshot,
+): CommentModerationActionRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    actor_id: snapshot.actorId,
+    action: snapshot.action,
+    reason: snapshot.reason,
+    previous_status: snapshot.previousStatus,
+    new_status: snapshot.newStatus,
     created_at: createdAt,
   }
 }

@@ -82,6 +82,13 @@ export interface ProductCommentsTable {
   readonly images: string[]
 
   readonly created_at: Date
+
+  /**
+   * Estado de moderacion (HU-41). `PENDING` al publicarse; las acciones de
+   * moderacion lo mueven a uno de los otros cinco valores, uno a uno con
+   * `ModerationAction`.
+   */
+  readonly moderation_status: string
 }
 
 /**
@@ -116,10 +123,29 @@ export interface CommentReportsTable {
   readonly created_at: Date
 }
 
+/**
+ * Registro de auditoria de una accion de moderacion (HU-41.3).
+ *
+ * Sin clave foranea a `product_comments`, por la misma razon que
+ * `CommentReportsTable`: es evidencia de moderacion y debe sobrevivir aunque
+ * el comentario moderado deje de estar disponible.
+ */
+export interface CommentModerationActionsTable {
+  readonly id: string
+  readonly comment_id: string
+  readonly actor_id: string
+  readonly action: string
+  readonly reason: string
+  readonly previous_status: string
+  readonly new_status: string
+  readonly created_at: Date
+}
+
 export interface Database {
   readonly threads: ThreadsTable
   readonly posts: PostsTable
   readonly product_comments: ProductCommentsTable
   readonly product_reviews: ProductReviewsTable
   readonly comment_reports: CommentReportsTable
+  readonly comment_moderation_actions: CommentModerationActionsTable
 }

@@ -30,13 +30,26 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
     this.db = db
   }
 
+  /**
+   * `doUpdateSet` -no `doNothing`- desde HU-41: un comentario ya no es
+   * inmutable una vez publicado. Las acciones de moderacion (aprobar, ocultar,
+   * eliminar, editar, marcar) reutilizan `save` sobre el MISMO id para
+   * persistir el nuevo `moderation_status` -y, cuando corresponde, el
+   * `content` editado-. `product_id`, `author_id`, `images` y `created_at` no
+   * se tocan: ninguna accion de moderacion los cambia.
+   */
   async save(comment: ProductComment): Promise<void> {
     const row = toProductCommentRow(comment.toSnapshot())
 
     await this.db
       .insertInto('product_comments')
       .values(row)
-      .onConflict((oc) => oc.column('id').doNothing())
+      .onConflict((oc) =>
+        oc.column('id').doUpdateSet({
+          content: row.content,
+          moderation_status: row.moderation_status,
+        }),
+      )
       .execute()
   }
 
@@ -86,6 +99,7 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
       content: CommentContent.create(snapshot.content),
       images: snapshot.images.map((image) => ImageReference.create(image)),
       createdAt: new Date(snapshot.createdAt),
+      moderationStatus: snapshot.moderationStatus,
     })
   }
 }

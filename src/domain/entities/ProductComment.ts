@@ -7,6 +7,7 @@ import type {
 } from '../value-objects/product-review-values'
 import { MAX_COMMENT_IMAGES } from '../value-objects/product-review-values'
 import type { AuthorId } from '../value-objects/community-values'
+import { CommentModerationStatus, ModerationAction } from '../value-objects/moderation-values'
 
 export interface ProductCommentSnapshot {
   readonly id: string
@@ -15,6 +16,8 @@ export interface ProductCommentSnapshot {
   readonly content: string
   readonly images: readonly string[]
   readonly createdAt: string
+  /** HU-41: estado de moderacion. `PENDING` para todo comentario recien publicado. */
+  readonly moderationStatus: CommentModerationStatus
 }
 
 /**
@@ -31,9 +34,10 @@ export class ProductComment {
   readonly id: ProductCommentId
   readonly productId: ProductId
   readonly authorId: AuthorId
-  readonly content: CommentContent
+  private content: CommentContent
   readonly images: readonly ImageReference[]
   readonly createdAt: Date
+  private moderationStatus: CommentModerationStatus
 
   private constructor(params: {
     id: ProductCommentId
@@ -42,6 +46,7 @@ export class ProductComment {
     content: CommentContent
     images: readonly ImageReference[]
     createdAt: Date
+    moderationStatus: CommentModerationStatus
   }) {
     this.id = params.id
     this.productId = params.productId
@@ -49,12 +54,14 @@ export class ProductComment {
     this.content = params.content
     this.images = params.images
     this.createdAt = params.createdAt
+    this.moderationStatus = params.moderationStatus
   }
 
   /**
    * Publica un comentario nuevo. El tope de imagenes se exige aqui, en la
    * accion que las incorpora -- no en `restore`, que reconstruye un estado ya
-   * valido en su momento de guardarse.
+   * valido en su momento de guardarse. Nace `PENDING`: HU-41 no distingue un
+   * comentario "ya revisado de antemano".
    */
   static publish(params: {
     id: ProductCommentId
@@ -70,7 +77,11 @@ export class ProductComment {
       )
     }
 
-    return new ProductComment({ ...params, createdAt: params.occurredAt })
+    return new ProductComment({
+      ...params,
+      createdAt: params.occurredAt,
+      moderationStatus: CommentModerationStatus.Pending,
+    })
   }
 
   static restore(params: {
@@ -80,8 +91,47 @@ export class ProductComment {
     content: CommentContent
     images: readonly ImageReference[]
     createdAt: Date
+    moderationStatus: CommentModerationStatus
   }): ProductComment {
     return new ProductComment(params)
+  }
+
+  get currentContent(): CommentContent {
+    return this.content
+  }
+
+  get currentModerationStatus(): CommentModerationStatus {
+    return this.moderationStatus
+  }
+
+  /**
+   * Aplica una accion de moderacion (HU-41.2/41.3) y devuelve el estado
+   * anterior, que es lo que el registro de auditoria necesita conservar.
+   *
+   * Sin restriccion de transicion: HU-41 no declara ningun camino vetado
+   * entre los cinco estados -un comentario oculto puede aprobarse despues, uno
+   * marcado puede eliminarse-, asi que la unica regla es que la accion
+   * corresponda al vocabulario cerrado de `ModerationAction`. `edit` es la
+   * unica accion que ademas cambia el contenido.
+   */
+  moderate(params: { readonly action: ModerationAction; readonly newContent?: CommentContent }): {
+    readonly previousStatus: CommentModerationStatus
+    readonly newStatus: CommentModerationStatus
+  } {
+    const previousStatus = this.moderationStatus
+    const newStatus = MODERATION_ACTION_TARGET_STATUS[params.action]
+
+    if (params.action === ModerationAction.Edit) {
+      if (params.newContent === undefined) {
+        throw new DomainError('Editar un comentario exige el nuevo contenido.')
+      }
+
+      this.content = params.newContent
+    }
+
+    this.moderationStatus = newStatus
+
+    return { previousStatus, newStatus }
   }
 
   toSnapshot(): ProductCommentSnapshot {
@@ -92,6 +142,17 @@ export class ProductComment {
       content: this.content.value,
       images: this.images.map((image) => image.value),
       createdAt: this.createdAt.toISOString(),
+      moderationStatus: this.moderationStatus,
     }
   }
 }
+
+/** Cada accion de moderacion produce exactamente un estado, uno a uno. */
+const MODERATION_ACTION_TARGET_STATUS: Readonly<Record<ModerationAction, CommentModerationStatus>> =
+  {
+    [ModerationAction.Approve]: CommentModerationStatus.Approved,
+    [ModerationAction.Delete]: CommentModerationStatus.Deleted,
+    [ModerationAction.Hide]: CommentModerationStatus.Hidden,
+    [ModerationAction.Edit]: CommentModerationStatus.Edited,
+    [ModerationAction.Mark]: CommentModerationStatus.Marked,
+  }

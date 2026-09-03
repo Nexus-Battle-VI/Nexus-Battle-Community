@@ -12,6 +12,7 @@ import * as migration001 from '../../adapters/outbound/persistence/migrations/00
 import * as migration002 from '../../adapters/outbound/persistence/migrations/002-posts-by-author'
 import * as migration003 from '../../adapters/outbound/persistence/migrations/003-product-comments-reviews'
 import * as migration004 from '../../adapters/outbound/persistence/migrations/004-comment-reports'
+import * as migration005 from '../../adapters/outbound/persistence/migrations/005-comment-moderation'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -55,6 +56,7 @@ const migrations: MigrationProvider = {
       '002-posts-by-author': migration002,
       '003-product-comments-reviews': migration003,
       '004-comment-reports': migration004,
+      '005-comment-moderation': migration005,
     }),
 }
 
