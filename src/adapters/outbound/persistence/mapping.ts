@@ -1,5 +1,8 @@
 import { ThreadStatus } from '../../../domain/entities/Thread'
 import type { PostSnapshot, ThreadSnapshot } from '../../../domain/entities/Thread'
+import type { ProductCommentSnapshot } from '../../../domain/entities/ProductComment'
+import type { ProductReviewSnapshot } from '../../../domain/entities/ProductReview'
+import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
 
 /**
  * Traduccion entre filas de PostgreSQL y la instantanea del agregado.
@@ -107,3 +110,102 @@ export const toPostRows = (snapshot: ThreadSnapshot): readonly PostRow[] =>
       created_at: createdAt,
     }
   })
+
+export interface ProductCommentRow {
+  readonly id: string
+  readonly product_id: string
+  readonly author_id: string
+  readonly content: string
+  readonly images: string[]
+  readonly created_at: Date
+}
+
+export const toProductCommentSnapshot = (row: ProductCommentRow): ProductCommentSnapshot => ({
+  id: row.id,
+  productId: row.product_id,
+  authorId: row.author_id,
+  content: row.content,
+  images: row.images,
+  createdAt: row.created_at.toISOString(),
+})
+
+export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCommentRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `El comentario ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    product_id: snapshot.productId,
+    author_id: snapshot.authorId,
+    content: snapshot.content,
+    images: [...snapshot.images],
+    created_at: createdAt,
+  }
+}
+
+export interface CommentReportRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly author_id: string
+  readonly category: string
+  readonly description: string | null
+  readonly created_at: Date
+}
+
+export const toCommentReportRow = (snapshot: CommentReportSnapshot): CommentReportRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `El reporte ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    author_id: snapshot.authorId,
+    category: snapshot.category,
+    description: snapshot.description,
+    created_at: createdAt,
+  }
+}
+
+export interface ProductReviewRow {
+  readonly id: string
+  readonly product_id: string
+  readonly author_id: string
+  readonly rating: number
+  readonly created_at: Date
+}
+
+export const toProductReviewSnapshot = (row: ProductReviewRow): ProductReviewSnapshot => ({
+  id: row.id,
+  productId: row.product_id,
+  authorId: row.author_id,
+  rating: row.rating,
+  createdAt: row.created_at.toISOString(),
+})
+
+export const toProductReviewRow = (snapshot: ProductReviewSnapshot): ProductReviewRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `La calificacion ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    product_id: snapshot.productId,
+    author_id: snapshot.authorId,
+    rating: snapshot.rating,
+    created_at: createdAt,
+  }
+}
