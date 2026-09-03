@@ -81,25 +81,25 @@ Por eso `ProductComment` es una entidad independiente, identificada por su propi
 
 ## Puertos
 
-| Puerto                         | Responsabilidad                                        | Implementación actual                                                    |
-| ------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `ThreadRepositoryPort`         | Persistir, recuperar y listar hilos                     | `InMemoryThreadRepository` / `PostgresThreadRepository`                   |
-| `ProductCommentRepositoryPort` | Persistir y listar (paginados) comentarios de producto  | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository`   |
-| `ProductReviewRepositoryPort`  | Persistir calificaciones y calcular su resumen          | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`     |
-| `ProductExistencePort`         | Confirmar que un producto existe                        | `LocalProductCatalog`                                                      |
-| `ClockPort`                    | Proveer el instante actual                               | `SystemClock`                                                              |
-| `IdGeneratorPort`              | Generar identificadores                                  | `UuidGenerator`                                                            |
+| Puerto                         | Responsabilidad                                        | Implementación actual                                                   |
+| ------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `ThreadRepositoryPort`         | Persistir, recuperar y listar hilos                    | `InMemoryThreadRepository` / `PostgresThreadRepository`                 |
+| `ProductCommentRepositoryPort` | Persistir y listar (paginados) comentarios de producto | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository` |
+| `ProductReviewRepositoryPort`  | Persistir calificaciones y calcular su resumen         | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`   |
+| `ProductExistencePort`         | Confirmar que un producto existe                       | `LocalProductCatalog`                                                   |
+| `ClockPort`                    | Proveer el instante actual                             | `SystemClock`                                                           |
+| `IdGeneratorPort`              | Generar identificadores                                | `UuidGenerator`                                                         |
 
 ## Patrones aplicados
 
-| Patrón                | Dónde                                                                                 | Por qué                                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Ports and Adapters     | Todas las dependencias externas                                                        | Permite sustituir la persistencia sin tocar el dominio                                                          |
-| Aggregate              | `Thread` con sus mensajes                                                              | Las invariantes abarcan el hilo completo                                                                        |
-| Entidad independiente  | `ProductComment`, `ProductReview`                                                       | Sin invariantes compartidas entre comentarios/calificaciones de un mismo producto; ninguna necesita cargar a las demás |
-| Repository             | `ThreadRepositoryPort`, `ProductCommentRepositoryPort`, `ProductReviewRepositoryPort` | Aísla cada entidad del mecanismo de almacenamiento                                                              |
-| State                  | `ThreadStatus`                                                                          | Concentra qué operaciones admite cada estado                                                                    |
-| Domain Events          | `post.published`, `post.hidden`, `thread.closed`                                        | Registra hechos de forma trazable                                                                               |
+| Patrón                | Dónde                                                                                 | Por qué                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Ports and Adapters    | Todas las dependencias externas                                                       | Permite sustituir la persistencia sin tocar el dominio                                                                 |
+| Aggregate             | `Thread` con sus mensajes                                                             | Las invariantes abarcan el hilo completo                                                                               |
+| Entidad independiente | `ProductComment`, `ProductReview`                                                     | Sin invariantes compartidas entre comentarios/calificaciones de un mismo producto; ninguna necesita cargar a las demás |
+| Repository            | `ThreadRepositoryPort`, `ProductCommentRepositoryPort`, `ProductReviewRepositoryPort` | Aísla cada entidad del mecanismo de almacenamiento                                                                     |
+| State                 | `ThreadStatus`                                                                        | Concentra qué operaciones admite cada estado                                                                           |
+| Domain Events         | `post.published`, `post.hidden`, `thread.closed`                                      | Registra hechos de forma trazable                                                                                      |
 
 No se aplica CQRS ni Event Sourcing.
 

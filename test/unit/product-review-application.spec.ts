@@ -2,7 +2,10 @@ import {
   ListProductComments,
   PublishProductComment,
 } from '../../src/application/use-cases/ProductCommentUseCases'
-import { GetProductReviewSummary, RateProduct } from '../../src/application/use-cases/ProductReviewUseCases'
+import {
+  GetProductReviewSummary,
+  RateProduct,
+} from '../../src/application/use-cases/ProductReviewUseCases'
 import {
   DuplicateProductReviewError,
   ProductNotFoundError,
@@ -49,7 +52,12 @@ const buildHarness = (known: readonly string[] = [PRODUCTO, OTRO_PRODUCTO]): Har
   return {
     comments,
     reviews,
-    publish: new PublishProductComment({ comments, catalog, clock, ids: { generate: sequence('comment') } }),
+    publish: new PublishProductComment({
+      comments,
+      catalog,
+      clock,
+      ids: { generate: sequence('comment') },
+    }),
     list: new ListProductComments(comments),
     rate: new RateProduct({ reviews, catalog, clock, ids: { generate: sequence('review') } }),
     summary: new GetProductReviewSummary(reviews),
@@ -92,7 +100,11 @@ describe('PublishProductComment', () => {
     const harness = buildHarness()
 
     await expect(
-      harness.publish.execute({ productId: PRODUCTO_INEXISTENTE, authorId: 'acc-1', content: 'Hola' }),
+      harness.publish.execute({
+        productId: PRODUCTO_INEXISTENTE,
+        authorId: 'acc-1',
+        content: 'Hola',
+      }),
     ).rejects.toBeInstanceOf(ProductNotFoundError)
     expect(harness.comments.size).toBe(0)
   })
@@ -140,7 +152,11 @@ describe('ListProductComments', () => {
     const harness = buildHarness()
     await harness.publish.execute({ productId: PRODUCTO, authorId: 'acc-1', content: 'Primero' })
     await harness.publish.execute({ productId: PRODUCTO, authorId: 'acc-2', content: 'Segundo' })
-    await harness.publish.execute({ productId: OTRO_PRODUCTO, authorId: 'acc-3', content: 'De otro producto' })
+    await harness.publish.execute({
+      productId: OTRO_PRODUCTO,
+      authorId: 'acc-3',
+      content: 'De otro producto',
+    })
 
     const page = await harness.list.execute({ productId: PRODUCTO })
 
@@ -151,7 +167,11 @@ describe('ListProductComments', () => {
   it('pagina con limite y desplazamiento', async () => {
     const harness = buildHarness()
     for (let i = 0; i < 5; i += 1) {
-      await harness.publish.execute({ productId: PRODUCTO, authorId: 'acc-1', content: `C${String(i)}` })
+      await harness.publish.execute({
+        productId: PRODUCTO,
+        authorId: 'acc-1',
+        content: `C${String(i)}`,
+      })
     }
 
     const page = await harness.list.execute({ productId: PRODUCTO, limit: 2, offset: 1 })
@@ -266,7 +286,11 @@ describe('RateProduct', () => {
     const harness = buildHarness()
     await harness.rate.execute({ productId: PRODUCTO, authorId: 'acc-1', rating: 5 })
 
-    await harness.publish.execute({ productId: PRODUCTO, authorId: 'acc-1', content: 'Un comentario mas' })
+    await harness.publish.execute({
+      productId: PRODUCTO,
+      authorId: 'acc-1',
+      content: 'Un comentario mas',
+    })
     await harness.publish.execute({ productId: PRODUCTO, authorId: 'acc-1', content: 'Y otro' })
 
     const page = await harness.list.execute({ productId: PRODUCTO })

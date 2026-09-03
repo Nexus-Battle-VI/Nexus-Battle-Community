@@ -127,7 +127,10 @@ describe('ProductComment', () => {
   })
 
   it('acepta hasta el maximo de imagenes permitidas', () => {
-    const images = Array.from({ length: MAX_COMMENT_IMAGES }, (_v, i) => `https://cdn.test/${String(i)}.jpg`)
+    const images = Array.from(
+      { length: MAX_COMMENT_IMAGES },
+      (_v, i) => `https://cdn.test/${String(i)}.jpg`,
+    )
 
     expect(publish(images).images).toHaveLength(MAX_COMMENT_IMAGES)
   })
