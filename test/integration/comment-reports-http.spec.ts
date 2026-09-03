@@ -154,11 +154,14 @@ describe('Limite de reportes por jugador (HU-46.3)', () => {
     request(app.getHttpServer()).post(`/api/comments/${commentId}/reports`).send(body)
 
   it('responde 429 al superar el limite de reportes configurado', async () => {
-    const comments = await Promise.all(
-      Array.from({ length: 4 }, (_v, i) =>
-        publishComment(`Comentario para agotar el limite ${String(i)}`),
-      ),
-    )
+    // Secuencial a proposito: `app.getHttpServer()` sin `listen()` abre un
+    // socket efimero por peticion, y cuatro aperturas concurrentes via
+    // `Promise.all` son inestables en CI (`ECONNRESET` intermitente). El
+    // orden de publicacion no es lo que prueba este caso.
+    const comments: string[] = []
+    for (let i = 0; i < 4; i += 1) {
+      comments.push(await publishComment(`Comentario para agotar el limite ${String(i)}`))
+    }
 
     for (const commentId of comments.slice(0, 3)) {
       const response = await report(commentId, { category: 'SPAM' })
