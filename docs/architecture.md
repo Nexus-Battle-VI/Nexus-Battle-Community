@@ -103,7 +103,7 @@ No se registra el contenido de los mensajes.
 ## Limitaciones conocidas del alcance actual
 
 - La persistencia es en memoria y se pierde al reiniciar. El adaptador PostgreSQL depende de ADR-005.
-- **No hay control de acceso.** El `moderatorId` llega en el cuerpo de la petición sin verificación: cualquiera podría ocultar mensajes o cerrar hilos. Es la limitación más relevante de este servicio. Resolverla requiere que Account emita credenciales verificables, lo que depende del proveedor de identidad pendiente de aprobación. **Este servicio no debe desplegarse en un entorno accesible sin resolverla.**
+- **La autenticación, el RBAC y la consulta fail-closed de evidencia MFA están implementados.** El autor y el moderador salen del testimonio verificado, nunca del cuerpo de la petición. Ocultar un mensaje y cerrar un hilo exigen además evidencia de segundo factor: Account conserva y valida la evidencia ligada a `subject + jti + method`, y Community exige explícitamente `method=AUTHENTICATOR_APP`, porque SMS o correo no satisfacen la decisión para operaciones de moderación. El despliegue debe configurar la URL interna, la identidad de servicio y el secreto HMAC compartido; si Account no puede comprobar la evidencia, Community responde `503` y no ejecuta la mutación. El modo sin autenticación queda limitado al desarrollo local y no arranca en producción.
 - No hay filtrado automático de contenido. La moderación es manual y reactiva.
 - La lectura no está paginada. El límite de 500 mensajes por hilo lo hace aceptable en la demo, no en la arquitectura objetivo.
 
