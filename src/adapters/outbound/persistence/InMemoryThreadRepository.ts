@@ -7,7 +7,10 @@ import {
   ThreadId,
   ThreadTitle,
 } from '../../../domain/value-objects/community-values'
-import type { ThreadRepositoryPort } from '../../../application/ports/ThreadRepositoryPort'
+import type {
+  OwnedPostRecord,
+  ThreadRepositoryPort,
+} from '../../../application/ports/ThreadRepositoryPort'
 
 /**
  * Repositorio en memoria del agregado Thread.
@@ -38,6 +41,26 @@ export class InMemoryThreadRepository implements ThreadRepositoryPort {
     const found = [...this.byId.values()]
       .map((snapshot) => InMemoryThreadRepository.hydrate(snapshot))
       .sort((a, b) => a.id.value.localeCompare(b.id.value))
+
+    return Promise.resolve(found)
+  }
+
+  findPostsByAuthor(authorId: AuthorId): Promise<readonly OwnedPostRecord[]> {
+    const found = [...this.byId.values()]
+      .flatMap((thread) =>
+        thread.posts
+          .filter((post) => post.authorId === authorId.value)
+          .map((post) => ({
+            id: post.id,
+            threadId: thread.id,
+            content: post.content,
+            createdAt: post.createdAt,
+          })),
+      )
+      .sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+      )
 
     return Promise.resolve(found)
   }
