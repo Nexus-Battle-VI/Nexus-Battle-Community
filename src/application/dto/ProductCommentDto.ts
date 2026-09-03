@@ -1,4 +1,5 @@
 import type { ProductCommentSnapshot } from '../../domain/entities/ProductComment'
+import type { CommentModerationStatus } from '../../domain/value-objects/moderation-values'
 
 export interface ProductCommentDto {
   readonly id: string
@@ -7,6 +8,7 @@ export interface ProductCommentDto {
   readonly content: string
   readonly images: readonly string[]
   readonly createdAt: string
+  readonly moderationStatus: CommentModerationStatus
 }
 
 export const toProductCommentDto = (snapshot: ProductCommentSnapshot): ProductCommentDto => ({
@@ -16,6 +18,7 @@ export const toProductCommentDto = (snapshot: ProductCommentSnapshot): ProductCo
   content: snapshot.content,
   images: snapshot.images,
   createdAt: snapshot.createdAt,
+  moderationStatus: snapshot.moderationStatus,
 })
 
 export interface ProductCommentPageDto {

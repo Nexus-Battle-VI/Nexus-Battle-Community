@@ -147,6 +147,40 @@ describe('Persistencia de comentarios y calificaciones de producto', () => {
       expect(page.items[0]?.productId.value).toBe(producto.value)
     })
 
+    /**
+     * HU-41: `save` debe persistir el AVANCE de un comentario ya existente
+     * (moderation_status, content), no solo insertarlo una vez. Antes de
+     * HU-41, `onConflict` resolvia con `doNothing` -- correcto mientras el
+     * comentario era inmutable, pero silenciaria cualquier accion de
+     * moderacion contra un motor real sin que ninguna prueba en memoria
+     * pudiera detectarlo.
+     */
+    it('persiste el avance de moderacion de un comentario ya guardado (HU-41)', async () => {
+      const producto = nextProductId()
+      const comment = buildComment(producto)
+      await comments.save(comment)
+
+      comment.moderate({ action: 'HIDE' })
+      await comments.save(comment)
+
+      const releido = await comments.findById(comment.id)
+      expect(releido?.currentModerationStatus).toBe('HIDDEN')
+
+      comment.moderate({
+        action: 'EDIT',
+        newContent: CommentContent.create('Contenido corregido por moderacion.'),
+      })
+      await comments.save(comment)
+
+      const trasEdicion = await comments.findById(comment.id)
+      expect(trasEdicion?.currentModerationStatus).toBe('EDITED')
+      expect(trasEdicion?.currentContent.value).toBe('Contenido corregido por moderacion.')
+
+      // product_id, author_id e images no cambian con la moderacion.
+      expect(trasEdicion?.productId.value).toBe(producto.value)
+      expect(trasEdicion?.authorId.value).toBe('acc-1')
+    })
+
     describe('Las restricciones viven en el motor, no solo en el codigo', () => {
       it('rechaza mas del maximo de imagenes escrito directamente en la tabla', async () => {
         await expect(
@@ -159,6 +193,24 @@ describe('Persistencia de comentarios y calificaciones de producto', () => {
               content: 'Directo a la tabla',
               images: Array.from({ length: 6 }, (_v, i) => `https://cdn.test/${String(i)}.jpg`),
               created_at: AT,
+              moderation_status: 'PENDING',
+            })
+            .execute(),
+        ).rejects.toThrow()
+      })
+
+      it('rechaza un moderation_status que no pertenece al vocabulario de HU-41', async () => {
+        await expect(
+          db
+            .insertInto('product_comments')
+            .values({
+              id: 'comment-estado-invalido',
+              product_id: nextProductId().value,
+              author_id: 'acc-1',
+              content: 'Directo a la tabla',
+              images: [],
+              created_at: AT,
+              moderation_status: 'REVISANDO',
             })
             .execute(),
         ).rejects.toThrow()

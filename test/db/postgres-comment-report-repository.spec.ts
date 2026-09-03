@@ -137,6 +137,59 @@ describe('PostgresCommentReportRepository', () => {
     })
   })
 
+  describe('listModerationQueue (HU-41.1)', () => {
+    it('agrupa por comentario y cuenta los reportes de cada uno', async () => {
+      const comentarioA = randomUUID()
+      const comentarioB = randomUUID()
+
+      await repository.save(
+        CommentReport.file({
+          id: CommentReportId.create(randomUUID()),
+          commentId: ProductCommentId.create(comentarioA),
+          authorId: AuthorId.create(`acc-${randomUUID()}`),
+          category: ReportCategory.Spam,
+          description: null,
+          occurredAt: AT,
+        }),
+      )
+      await repository.save(
+        CommentReport.file({
+          id: CommentReportId.create(randomUUID()),
+          commentId: ProductCommentId.create(comentarioA),
+          authorId: AuthorId.create(`acc-${randomUUID()}`),
+          category: ReportCategory.Harassment,
+          description: null,
+          occurredAt: new Date(AT.getTime() + 1_000),
+        }),
+      )
+      await repository.save(
+        CommentReport.file({
+          id: CommentReportId.create(randomUUID()),
+          commentId: ProductCommentId.create(comentarioB),
+          authorId: AuthorId.create(`acc-${randomUUID()}`),
+          category: ReportCategory.Spam,
+          description: null,
+          occurredAt: AT,
+        }),
+      )
+
+      const { items } = await repository.listModerationQueue({ limit: 100, offset: 0 })
+
+      const entradaA = items.find((item) => item.commentId === comentarioA)
+      const entradaB = items.find((item) => item.commentId === comentarioB)
+
+      expect(entradaA?.reportCount).toBe(2)
+      expect(entradaB?.reportCount).toBe(1)
+    })
+
+    it('respeta el limite y el desplazamiento', async () => {
+      const { items, total } = await repository.listModerationQueue({ limit: 1, offset: 0 })
+
+      expect(items.length).toBeLessThanOrEqual(1)
+      expect(total).toBeGreaterThan(0)
+    })
+  })
+
   it('la migracion es idempotente: volver a aplicarla no cambia nada', async () => {
     const { applied, error } = await migrateToLatest(db)
 
