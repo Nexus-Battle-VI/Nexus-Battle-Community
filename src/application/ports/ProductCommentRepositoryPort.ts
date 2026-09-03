@@ -1,5 +1,5 @@
 import type { ProductComment } from '../../domain/entities/ProductComment'
-import type { ProductId } from '../../domain/value-objects/product-review-values'
+import type { ProductCommentId, ProductId } from '../../domain/value-objects/product-review-values'
 
 export interface ListProductCommentsPage {
   readonly limit: number
@@ -22,6 +22,8 @@ export interface ProductCommentPage {
 export interface ProductCommentRepositoryPort {
   save(comment: ProductComment): Promise<void>
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage>
+  /** Lo consume HU-46: un reporte debe poder confirmar que el comentario existe. */
+  findById(commentId: ProductCommentId): Promise<ProductComment | null>
 }
 
 export const PRODUCT_COMMENT_REPOSITORY = Symbol('ProductCommentRepositoryPort')

@@ -11,6 +11,7 @@ import type { Database } from '../../adapters/outbound/persistence/schema'
 import * as migration001 from '../../adapters/outbound/persistence/migrations/001-threads'
 import * as migration002 from '../../adapters/outbound/persistence/migrations/002-posts-by-author'
 import * as migration003 from '../../adapters/outbound/persistence/migrations/003-product-comments-reviews'
+import * as migration004 from '../../adapters/outbound/persistence/migrations/004-comment-reports'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -53,6 +54,7 @@ const migrations: MigrationProvider = {
       '001-threads': migration001,
       '002-posts-by-author': migration002,
       '003-product-comments-reviews': migration003,
+      '004-comment-reports': migration004,
     }),
 }
 

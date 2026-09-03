@@ -2,6 +2,7 @@ import { ThreadStatus } from '../../../domain/entities/Thread'
 import type { PostSnapshot, ThreadSnapshot } from '../../../domain/entities/Thread'
 import type { ProductCommentSnapshot } from '../../../domain/entities/ProductComment'
 import type { ProductReviewSnapshot } from '../../../domain/entities/ProductReview'
+import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
 
 /**
  * Traduccion entre filas de PostgreSQL y la instantanea del agregado.
@@ -143,6 +144,34 @@ export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCo
     author_id: snapshot.authorId,
     content: snapshot.content,
     images: [...snapshot.images],
+    created_at: createdAt,
+  }
+}
+
+export interface CommentReportRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly author_id: string
+  readonly category: string
+  readonly description: string | null
+  readonly created_at: Date
+}
+
+export const toCommentReportRow = (snapshot: CommentReportSnapshot): CommentReportRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `El reporte ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    author_id: snapshot.authorId,
+    category: snapshot.category,
+    description: snapshot.description,
     created_at: createdAt,
   }
 }
