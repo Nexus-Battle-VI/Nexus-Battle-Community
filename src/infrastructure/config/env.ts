@@ -52,6 +52,16 @@ export interface AppConfig {
    */
   readonly commentReportLimit: number
   readonly commentReportWindowHours: number
+  /**
+   * Contrato interno de calificacion hacia Catalog (HU-40, CA-03). Los tres
+   * son opcionales -a diferencia del mismo contrato en Commerce-: sin ellos
+   * `RATE_PRODUCT` sigue siendo plenamente funcional, y Catalog simplemente
+   * no recibe el agregado.
+   */
+  readonly catalogInternalUrl: string | null
+  readonly internalServiceAuthSecret: string | null
+  readonly internalServiceName: string
+  readonly internalTimeoutMs: number
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -174,6 +184,9 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     )
   }
 
+  const catalogInternalUrl = readString(env, 'CATALOG_INTERNAL_URL', '')
+  const internalServiceAuthSecret = readString(env, 'INTERNAL_SERVICE_AUTH_SECRET', '')
+
   const cognitoUserPoolId = readString(env, 'COGNITO_USER_POOL_ID', '')
   const cognitoClientId = readString(env, 'COGNITO_CLIENT_ID', '')
 
@@ -205,5 +218,9 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     // de negocio cerrada.
     commentReportLimit: readInteger(env, 'COMMENT_REPORT_LIMIT', 10, 1, 1_000),
     commentReportWindowHours: readInteger(env, 'COMMENT_REPORT_WINDOW_HOURS', 24, 1, 8_760),
+    catalogInternalUrl: catalogInternalUrl === '' ? null : catalogInternalUrl,
+    internalServiceAuthSecret: internalServiceAuthSecret === '' ? null : internalServiceAuthSecret,
+    internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'community'),
+    internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 2_000, 100, 30_000),
   }
 }

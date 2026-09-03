@@ -44,6 +44,7 @@ import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
 import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
 import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
 import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
+import { PRODUCT_RATING_PUBLISHER } from '../../application/ports/ProductRatingPublisherPort'
 import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
@@ -51,6 +52,7 @@ import type { ThreadRepositoryPort } from '../../application/ports/ThreadReposit
 import type { ProductCommentRepositoryPort } from '../../application/ports/ProductCommentRepositoryPort'
 import type { ProductReviewRepositoryPort } from '../../application/ports/ProductReviewRepositoryPort'
 import type { ProductExistencePort } from '../../application/ports/ProductExistencePort'
+import type { ProductRatingPublisherPort } from '../../application/ports/ProductRatingPublisherPort'
 import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
@@ -67,6 +69,7 @@ import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
 } from '../../adapters/outbound/existence/LocalProductCatalog'
+import { HttpCatalogRatingClient } from '../../adapters/outbound/catalog/HttpCatalogRatingClient'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 
@@ -186,6 +189,34 @@ export const LOGGER = Symbol('Logger')
       // no llamar en vivo a Nexus-Battle-Catalog todavia.
       provide: PRODUCT_EXISTENCE,
       useFactory: (): ProductExistencePort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
+    },
+    {
+      // Sin CATALOG_INTERNAL_URL/INTERNAL_SERVICE_AUTH_SECRET, un publicador
+      // que no hace nada: a diferencia del mismo contrato en Commerce, este
+      // empuje es opcional y su ausencia no debe impedir arrancar ni calificar.
+      provide: PRODUCT_RATING_PUBLISHER,
+      useFactory: (config: AppConfig, logger: Logger): ProductRatingPublisherPort => {
+        if (config.catalogInternalUrl === null || config.internalServiceAuthSecret === null) {
+          logger.warn('catalog_rating_publisher', {
+            driver: 'no-configurado',
+            detail:
+              'Sin CATALOG_INTERNAL_URL o INTERNAL_SERVICE_AUTH_SECRET, el promedio no se empuja a Catalog.',
+          })
+
+          return { publish: (): Promise<void> => Promise.resolve() }
+        }
+
+        logger.info('catalog_rating_publisher', { driver: 'http' })
+
+        return new HttpCatalogRatingClient({
+          baseUrl: config.catalogInternalUrl,
+          secret: config.internalServiceAuthSecret,
+          serviceName: config.internalServiceName,
+          timeoutMs: config.internalTimeoutMs,
+          logger,
+        })
+      },
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       provide: COMMENT_REPORT_REPOSITORY,
@@ -334,8 +365,15 @@ export const LOGGER = Symbol('Logger')
         catalog: ProductExistencePort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): RateProduct => new RateProduct({ reviews, catalog, clock, ids }),
-      inject: [PRODUCT_REVIEW_REPOSITORY, PRODUCT_EXISTENCE, CLOCK, ID_GENERATOR],
+        ratingPublisher: ProductRatingPublisherPort,
+      ): RateProduct => new RateProduct({ reviews, catalog, clock, ids, ratingPublisher }),
+      inject: [
+        PRODUCT_REVIEW_REPOSITORY,
+        PRODUCT_EXISTENCE,
+        CLOCK,
+        ID_GENERATOR,
+        PRODUCT_RATING_PUBLISHER,
+      ],
     },
     {
       provide: GET_PRODUCT_REVIEW_SUMMARY,

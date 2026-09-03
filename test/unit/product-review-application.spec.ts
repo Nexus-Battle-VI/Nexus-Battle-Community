@@ -11,6 +11,7 @@ import {
   ProductNotFoundError,
 } from '../../src/application/errors/ApplicationError'
 import type { ProductExistencePort } from '../../src/application/ports/ProductExistencePort'
+import type { ProductRatingPublisherPort } from '../../src/application/ports/ProductRatingPublisherPort'
 import { InMemoryProductCommentRepository } from '../../src/adapters/outbound/persistence/InMemoryProductCommentRepository'
 import { InMemoryProductReviewRepository } from '../../src/adapters/outbound/persistence/InMemoryProductReviewRepository'
 import { DomainError } from '../../src/domain/errors/DomainError'
@@ -295,6 +296,56 @@ describe('RateProduct', () => {
 
     const page = await harness.list.execute({ productId: PRODUCTO })
     expect(page.total).toBe(2)
+  })
+})
+
+describe('RateProduct → empuje hacia Catalog (HU-40, CA-03)', () => {
+  const buildRateWithPublisher = (
+    publisher: ProductRatingPublisherPort,
+  ): { rate: RateProduct; reviews: InMemoryProductReviewRepository } => {
+    const reviews = new InMemoryProductReviewRepository()
+    const catalog = fakeCatalog([PRODUCTO, OTRO_PRODUCTO])
+    const clock = { now: (): Date => FIXED_NOW }
+
+    return {
+      reviews,
+      rate: new RateProduct({
+        reviews,
+        catalog,
+        clock,
+        ids: { generate: sequence('review') },
+        ratingPublisher: publisher,
+      }),
+    }
+  }
+
+  it('empuja el agregado RECALCULADO tras guardar la calificacion', async () => {
+    const publish = jest.fn().mockResolvedValue(undefined)
+    const { rate } = buildRateWithPublisher({ publish })
+
+    await rate.execute({ productId: PRODUCTO, authorId: 'acc-1', rating: 5 })
+    await rate.execute({ productId: PRODUCTO, authorId: 'acc-2', rating: 3 })
+
+    expect(publish).toHaveBeenNthCalledWith(1, PRODUCTO, { averageRating: 5, reviewCount: 1 })
+    expect(publish).toHaveBeenNthCalledWith(2, PRODUCTO, { averageRating: 4, reviewCount: 2 })
+  })
+
+  it('no empuja nada si la calificacion es rechazada', async () => {
+    const publish = jest.fn().mockResolvedValue(undefined)
+    const { rate } = buildRateWithPublisher({ publish })
+
+    await expect(
+      rate.execute({ productId: PRODUCTO, authorId: 'acc-1', rating: 9 }),
+    ).rejects.toBeInstanceOf(DomainError)
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('sin publicador configurado, RateProduct sigue funcionando igual', async () => {
+    const harness = buildHarness()
+
+    await expect(
+      harness.rate.execute({ productId: PRODUCTO, authorId: 'acc-1', rating: 4 }),
+    ).resolves.toMatchObject({ productId: PRODUCTO, rating: 4 })
   })
 })
 
