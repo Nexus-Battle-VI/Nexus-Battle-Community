@@ -2,12 +2,14 @@ import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
 
 import { ThreadsController } from '../../adapters/inbound/http/threads.controller'
+import { MeController } from '../../adapters/inbound/http/me.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
   GET_THREAD,
   HIDE_POST,
   LIST_THREADS,
+  LIST_OWN_POSTS,
   OPEN_THREAD,
   PUBLISH_POST,
 } from '../../adapters/inbound/http/tokens'
@@ -18,6 +20,7 @@ import {
   GetThread,
   HidePost,
   ListThreads,
+  ListOwnPosts,
   OpenThread,
   PublishPost,
 } from '../../application/use-cases/ThreadUseCases'
@@ -57,7 +60,7 @@ export const LOGGER = Symbol('Logger')
  * framework.
  */
 @Module({
-  controllers: [ThreadsController, HealthController],
+  controllers: [ThreadsController, MeController, HealthController],
   providers: [
     {
       provide: APP_CONFIG,
@@ -201,6 +204,11 @@ export const LOGGER = Symbol('Logger')
     {
       provide: LIST_THREADS,
       useFactory: (threads: ThreadRepositoryPort): ListThreads => new ListThreads(threads),
+      inject: [THREAD_REPOSITORY],
+    },
+    {
+      provide: LIST_OWN_POSTS,
+      useFactory: (threads: ThreadRepositoryPort): ListOwnPosts => new ListOwnPosts(threads),
       inject: [THREAD_REPOSITORY],
     },
     {

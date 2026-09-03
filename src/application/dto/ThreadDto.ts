@@ -24,6 +24,13 @@ export interface ThreadSummaryDto {
   readonly postCount: number
 }
 
+export interface OwnPostDto {
+  readonly id: string
+  readonly threadId: string
+  readonly content: string
+  readonly createdAt: string
+}
+
 /**
  * Proyecta el hilo hacia el exterior **omitiendo los mensajes ocultos**.
  *

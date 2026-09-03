@@ -13,6 +13,7 @@ import { ThreadNotFoundError } from '../errors/ApplicationError'
 import {
   type ThreadDto,
   type ThreadSummaryDto,
+  type OwnPostDto,
   toThreadDto,
   toThreadSummaryDto,
 } from '../dto/ThreadDto'
@@ -180,5 +181,23 @@ export class ListThreads {
     const found = await this.threads.list()
 
     return found.map((thread) => toThreadSummaryDto(thread.toSnapshot()))
+  }
+}
+
+/**
+ * Recupera los mensajes que Community conserva sobre un titular.
+ *
+ * Incluye mensajes ocultos: la moderacion limita su lectura publica, pero no
+ * los borra del almacen ni deja de convertirlos en datos del autor.
+ */
+export class ListOwnPosts {
+  private readonly threads: ThreadRepositoryPort
+
+  constructor(threads: ThreadRepositoryPort) {
+    this.threads = threads
+  }
+
+  async execute(subject: string): Promise<readonly OwnPostDto[]> {
+    return await this.threads.findPostsByAuthor(AuthorId.create(subject))
   }
 }
