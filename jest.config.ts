@@ -37,6 +37,8 @@ const config: Config = {
     '!src/**/index.ts',
     '!src/main.ts',
     '!src/adapters/outbound/persistence/PostgresThreadRepository.ts',
+    '!src/adapters/outbound/persistence/PostgresProductCommentRepository.ts',
+    '!src/adapters/outbound/persistence/PostgresProductReviewRepository.ts',
     '!src/infrastructure/persistence/**',
   ],
   coverageDirectory: 'coverage',
