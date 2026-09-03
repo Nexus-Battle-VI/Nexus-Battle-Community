@@ -174,10 +174,12 @@ describe('API de comentarios y calificaciones de producto', () => {
     expect(response.status).toBe(201)
   })
 
-  it('DENIEGA una segunda calificacion del mismo jugador sobre el mismo producto', async () => {
-    // PRODUCTO ya fue calificado por el jugador anonimo mas arriba.
+  it('DENIEGA con 409 una segunda calificacion del mismo jugador sobre el mismo producto', async () => {
+    // PRODUCTO ya fue calificado por el jugador anonimo mas arriba. 409, no
+    // 400: es un conflicto con el estado actual, no una entrada mal formada
+    // -- mismo criterio que CanonicalProductsController en Catalog.
     const response = await rate(PRODUCTO, 3)
 
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(409)
   })
 })

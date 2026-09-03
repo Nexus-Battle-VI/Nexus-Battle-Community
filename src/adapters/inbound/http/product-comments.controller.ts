@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -109,8 +110,9 @@ export class ProductCommentsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registra la calificacion de un jugador sobre un producto' })
   @ApiResponse({ status: 201, type: ProductReviewResponse })
-  @ApiResponse({ status: 400, description: 'Ya existe una calificacion de este jugador' })
+  @ApiResponse({ status: 400, description: 'Datos invalidos' })
   @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 409, description: 'Ya existe una calificacion de este jugador' })
   async rate(
     @Param('productId') productId: string,
     @Body() body: RateProductRequest,
@@ -140,7 +142,14 @@ export class ProductCommentsController {
       return new NotFoundException(error.message)
     }
 
-    if (error instanceof DuplicateProductReviewError || error instanceof DomainError) {
+    // Mismo criterio que CanonicalProductsController en Catalog: un "ya
+    // existe" es un conflicto con el estado actual del recurso (409), no una
+    // entrada mal formada (400).
+    if (error instanceof DuplicateProductReviewError) {
+      return new ConflictException(error.message)
+    }
+
+    if (error instanceof DomainError) {
       return new BadRequestException(error.message)
     }
 
