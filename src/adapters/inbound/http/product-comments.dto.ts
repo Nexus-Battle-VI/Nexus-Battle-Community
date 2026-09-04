@@ -80,6 +80,13 @@ export class ProductCommentResponse {
 
   @ApiProperty({ example: '2026-09-02T10:00:00.000Z' })
   readonly createdAt!: string
+
+  @ApiProperty({
+    example: 'PENDING',
+    enum: ['PENDING', 'APPROVED', 'DELETED', 'HIDDEN', 'EDITED', 'MARKED'],
+    description: 'Estado de moderacion (HU-41). PENDING para todo comentario recien publicado.',
+  })
+  readonly moderationStatus!: string
 }
 
 export class ProductCommentPageResponse {

@@ -11,6 +11,7 @@ import {
 import { ProductComment } from '../../src/domain/entities/ProductComment'
 import { ProductReview } from '../../src/domain/entities/ProductReview'
 import { DomainError } from '../../src/domain/errors/DomainError'
+import { CommentModerationStatus } from '../../src/domain/value-objects/moderation-values'
 
 const AT = new Date('2026-09-02T10:00:00.000Z')
 
@@ -123,6 +124,7 @@ describe('ProductComment', () => {
       content: 'Buen producto, cumple lo prometido.',
       images: [],
       createdAt: AT.toISOString(),
+      moderationStatus: CommentModerationStatus.Pending,
     })
   })
 
@@ -152,6 +154,7 @@ describe('ProductComment', () => {
       content: CommentContent.create('Restaurado desde el almacen.'),
       images: [],
       createdAt: AT,
+      moderationStatus: CommentModerationStatus.Pending,
     })
 
     expect(restored.toSnapshot().content).toBe('Restaurado desde el almacen.')
