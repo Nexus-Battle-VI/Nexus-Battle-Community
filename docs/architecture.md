@@ -79,27 +79,39 @@ Por eso `ProductComment` es una entidad independiente, identificada por su propi
 
 `ProductExistencePort` (implementado hoy por `LocalProductCatalog`) es el mismo patrón que `LocalCatalogPricing` en `Nexus-Battle-Commerce`: un adaptador completo sobre datos en memoria, no una simulación del servicio real. Community no llama en vivo a `Nexus-Battle-Catalog` porque el contrato público de Catalog expone `sku`, mientras que este dominio ya trabaja con `productId` (el mismo `productId` canónico de Catalog, validado con el mismo patrón UUID) — la brecha de identificador queda fuera del alcance de HU-40.
 
+## Moderación de comentarios (HU-41)
+
+HU-41 depende de HU-40 y HU-46 (ya integrados) y, documentado en Management, de `EN-006 — Trazabilidad y auditoría`: una capacidad transversal común para las acciones administrativas de todo el org, pensada para dar un esquema de auditoría compartido entre Catalog, Account y Community. EN-006 sigue sin ninguna Task ni decisión del Product Owner sobre dónde vive esa capacidad -"Épica padre: Pendiente de decisión"-, así que HU-41 no la invoca: sería inventar un contrato con algo que todavía no existe.
+
+En su lugar, `CommentModerationAction` es el registro de auditoría **mínimo que HU-41 exige por sí misma** -actor, fecha, motivo, estado anterior y nuevo estado-, acotado a la moderación de comentarios y sin ninguna pretensión de sustituir a EN-006. Cuando esa capacidad transversal exista, este registro es candidato a reconciliarse con ella; hasta entonces, vive en la persistencia propia de Community, igual que `CommentReport`.
+
+`ProductComment` gana un `moderationStatus` (`PENDING` al publicarse, y uno de `APPROVED`/`DELETED`/`HIDDEN`/`EDITED`/`MARKED` tras la acción correspondiente, uno a uno). HU-41 no declara ninguna transición vetada entre esos cinco estados: un comentario oculto puede aprobarse después. "Eliminar" es un borrado **lógico** -la fila permanece con `DELETED`-, no físico: borrar la fila destruiría la evidencia que la propia historia exige conservar.
+
+La cola de moderación (`GET /comments/moderation-queue`, HU-41.1) se construye a partir de `CommentReport` (HU-46), agrupando por comentario y contando reportes. El requisito describe también "filtros automáticos de lenguaje ofensivo" como entrada a la cola, pero ese mecanismo no está implementado en ningún servicio del org: se documenta la brecha en vez de inventar un detector que no existe (mismo criterio que la brecha SKU/`productId` en HU-40).
+
 ## Puertos
 
-| Puerto                         | Responsabilidad                                        | Implementación actual                                                   |
-| ------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `ThreadRepositoryPort`         | Persistir, recuperar y listar hilos                    | `InMemoryThreadRepository` / `PostgresThreadRepository`                 |
-| `ProductCommentRepositoryPort` | Persistir y listar (paginados) comentarios de producto | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository` |
-| `ProductReviewRepositoryPort`  | Persistir calificaciones y calcular su resumen         | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`   |
-| `ProductExistencePort`         | Confirmar que un producto existe                       | `LocalProductCatalog`                                                   |
-| `ClockPort`                    | Proveer el instante actual                             | `SystemClock`                                                           |
-| `IdGeneratorPort`              | Generar identificadores                                | `UuidGenerator`                                                         |
+| Puerto                                  | Responsabilidad                                                | Implementación actual                                                                     |
+| --------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `ThreadRepositoryPort`                  | Persistir, recuperar y listar hilos                            | `InMemoryThreadRepository` / `PostgresThreadRepository`                                   |
+| `ProductCommentRepositoryPort`          | Persistir y listar (paginados) comentarios de producto         | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository`                   |
+| `ProductReviewRepositoryPort`           | Persistir calificaciones y calcular su resumen                 | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`                     |
+| `CommentReportRepositoryPort`           | Persistir reportes y construir la cola de moderación (HU-41.1) | `InMemoryCommentReportRepository` / `PostgresCommentReportRepository`                     |
+| `CommentModerationActionRepositoryPort` | Persistir y consultar la auditoría de moderación (HU-41.3)     | `InMemoryCommentModerationActionRepository` / `PostgresCommentModerationActionRepository` |
+| `ProductExistencePort`                  | Confirmar que un producto existe                               | `LocalProductCatalog`                                                                     |
+| `ClockPort`                             | Proveer el instante actual                                     | `SystemClock`                                                                             |
+| `IdGeneratorPort`                       | Generar identificadores                                        | `UuidGenerator`                                                                           |
 
 ## Patrones aplicados
 
-| Patrón                | Dónde                                                                                 | Por qué                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Ports and Adapters    | Todas las dependencias externas                                                       | Permite sustituir la persistencia sin tocar el dominio                                                                 |
-| Aggregate             | `Thread` con sus mensajes                                                             | Las invariantes abarcan el hilo completo                                                                               |
-| Entidad independiente | `ProductComment`, `ProductReview`                                                     | Sin invariantes compartidas entre comentarios/calificaciones de un mismo producto; ninguna necesita cargar a las demás |
-| Repository            | `ThreadRepositoryPort`, `ProductCommentRepositoryPort`, `ProductReviewRepositoryPort` | Aísla cada entidad del mecanismo de almacenamiento                                                                     |
-| State                 | `ThreadStatus`                                                                        | Concentra qué operaciones admite cada estado                                                                           |
-| Domain Events         | `post.published`, `post.hidden`, `thread.closed`                                      | Registra hechos de forma trazable                                                                                      |
+| Patrón                | Dónde                                                                                                                                                         | Por qué                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Ports and Adapters    | Todas las dependencias externas                                                                                                                               | Permite sustituir la persistencia sin tocar el dominio                                                                                    |
+| Aggregate             | `Thread` con sus mensajes                                                                                                                                     | Las invariantes abarcan el hilo completo                                                                                                  |
+| Entidad independiente | `ProductComment`, `ProductReview`, `CommentReport`, `CommentModerationAction`                                                                                 | Sin invariantes compartidas entre comentarios/calificaciones/reportes/auditoría de un mismo producto; ninguna necesita cargar a las demás |
+| Repository            | `ThreadRepositoryPort`, `ProductCommentRepositoryPort`, `ProductReviewRepositoryPort`, `CommentReportRepositoryPort`, `CommentModerationActionRepositoryPort` | Aísla cada entidad del mecanismo de almacenamiento                                                                                        |
+| State                 | `ThreadStatus`, `CommentModerationStatus`                                                                                                                     | Concentra qué operaciones/estados admite cada agregado                                                                                    |
+| Domain Events         | `post.published`, `post.hidden`, `thread.closed`                                                                                                              | Registra hechos de forma trazable                                                                                                         |
 
 No se aplica CQRS ni Event Sourcing.
 
@@ -132,5 +144,7 @@ No se registra el contenido de los mensajes.
 - **La existencia de producto se verifica contra un catálogo local (`LocalProductCatalog`), no contra `Nexus-Battle-Catalog` en vivo.** El contrato público de Catalog expone `sku`; este dominio ya trabaja con `productId`. Resolver esa brecha de identificador queda fuera del alcance de HU-40.
 - **Las imágenes de comentario se guardan como referencia (URL), no como archivo subido.** No existe todavía almacenamiento propio de objetos en Community: la decisión de si se reutiliza el bucket S3 de Catalog o se solicita uno nuevo está pendiente en el Enabler EN-028 de `Nexus-Battle-Management`.
 - El promedio de calificación de un producto se calcula y expone solo desde Community (`GET /products/:productId/reviews/summary`); no se escribe en el producto canónico de Catalog. Ese endpoint interno es una integración coordinada pero separada, del lado de Catalog.
+- **La cola de moderación (HU-41.1) solo incluye comentarios reportados.** No existe ningún filtro automático de lenguaje ofensivo en ningún servicio del org; cuando exista, deberá alimentar la misma cola sin cambiar el contrato de `GET /comments/moderation-queue`.
+- **El registro de auditoría de moderación (`CommentModerationAction`, HU-41.3) es propio de Community, no la capacidad transversal de `EN-006 — Trazabilidad y auditoría`.** EN-006 sigue sin Tasks ni decisión del Product Owner sobre dónde vive; este registro es el mínimo que HU-41 exige por sí misma y queda documentado como candidato a reconciliarse con EN-006 cuando esta exista.
 
 Estas limitaciones están declaradas de forma explícita para que la arquitectura de demo no se confunda con la arquitectura objetivo.
