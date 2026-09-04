@@ -159,6 +159,7 @@ describe('Persistencia de comentarios y calificaciones de producto', () => {
               content: 'Directo a la tabla',
               images: Array.from({ length: 6 }, (_v, i) => `https://cdn.test/${String(i)}.jpg`),
               created_at: AT,
+              moderation_status: 'PENDING',
             })
             .execute(),
         ).rejects.toThrow()
