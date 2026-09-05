@@ -32,6 +32,7 @@ const config: Config = {
     'src/adapters/outbound/persistence/PostgresProductReviewRepository.ts',
     'src/adapters/outbound/persistence/PostgresCommentReportRepository.ts',
     'src/adapters/outbound/persistence/PostgresCommentModerationActionRepository.ts',
+    'src/adapters/outbound/persistence/PostgresCommentImageAssetRepository.ts',
     'src/adapters/outbound/persistence/migrations/**/*.ts',
     'src/infrastructure/persistence/**/*.ts',
     '!src/infrastructure/persistence/migrate.ts',

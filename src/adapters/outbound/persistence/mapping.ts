@@ -5,6 +5,10 @@ import type { ProductReviewSnapshot } from '../../../domain/entities/ProductRevi
 import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
 import type { CommentModerationActionSnapshot } from '../../../domain/entities/CommentModerationAction'
 import {
+  isCommentImageAssetStatus,
+  type CommentImageAssetSnapshot,
+} from '../../../domain/entities/CommentImageAsset'
+import {
   isCommentModerationStatus,
   isModerationAction,
   type CommentModerationStatus,
@@ -293,5 +297,68 @@ export const toProductReviewRow = (snapshot: ProductReviewSnapshot): ProductRevi
     author_id: snapshot.authorId,
     rating: snapshot.rating,
     created_at: createdAt,
+  }
+}
+
+export interface CommentImageAssetRow {
+  readonly asset_id: string
+  readonly author_id: string
+  readonly status: string
+  readonly content_type: string
+  readonly content_length: number
+  readonly checksum_sha256: string
+  readonly staging_key: string
+  readonly target_key: string | null
+  readonly image_url: string
+  readonly created_at: Date
+  readonly expires_at: Date
+  readonly finalized_at: Date | null
+}
+
+/**
+ * A diferencia de `ProductCommentSnapshot`, `CommentImageAssetSnapshot` ya usa
+ * `Date` -no ISO string- para sus campos de tiempo (mismo criterio que
+ * `ProductAssetSnapshot` en Catalog), asi que esta conversion no valida
+ * formato de fecha: no hay parseo que pueda fallar.
+ */
+export const toCommentImageAssetRow = (
+  snapshot: CommentImageAssetSnapshot,
+): CommentImageAssetRow => ({
+  asset_id: snapshot.assetId,
+  author_id: snapshot.authorId,
+  status: snapshot.status,
+  content_type: snapshot.contentType,
+  content_length: snapshot.contentLength,
+  checksum_sha256: snapshot.checksumSha256,
+  staging_key: snapshot.stagingKey,
+  target_key: snapshot.targetKey ?? null,
+  image_url: snapshot.imageUrl,
+  created_at: snapshot.createdAt,
+  expires_at: snapshot.expiresAt,
+  finalized_at: snapshot.finalizedAt ?? null,
+})
+
+export const toCommentImageAssetSnapshot = (
+  row: CommentImageAssetRow,
+): CommentImageAssetSnapshot => {
+  if (!isCommentImageAssetStatus(row.status)) {
+    throw new PersistenceMappingError(
+      `La imagen ${row.asset_id} tiene un estado desconocido: "${row.status}".`,
+    )
+  }
+
+  return {
+    assetId: row.asset_id,
+    authorId: row.author_id,
+    status: row.status,
+    contentType: row.content_type,
+    contentLength: row.content_length,
+    checksumSha256: row.checksum_sha256,
+    stagingKey: row.staging_key,
+    targetKey: row.target_key ?? undefined,
+    imageUrl: row.image_url,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    finalizedAt: row.finalized_at ?? undefined,
   }
 }
