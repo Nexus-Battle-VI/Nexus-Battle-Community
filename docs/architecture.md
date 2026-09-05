@@ -83,7 +83,16 @@ Por eso `ProductComment` es una entidad independiente, identificada por su propi
 
 HU-41 depende de HU-40 y HU-46 (ya integrados) y, documentado en Management, de `EN-006 — Trazabilidad y auditoría`: una capacidad transversal común para las acciones administrativas de todo el org, pensada para dar un esquema de auditoría compartido entre Catalog, Account y Community. EN-006 sigue sin ninguna Task ni decisión del Product Owner sobre dónde vive esa capacidad -"Épica padre: Pendiente de decisión"-, así que HU-41 no la invoca: sería inventar un contrato con algo que todavía no existe.
 
-En su lugar, `CommentModerationAction` es el registro de auditoría **mínimo que HU-41 exige por sí misma** -actor, fecha, motivo, estado anterior y nuevo estado-, acotado a la moderación de comentarios y sin ninguna pretensión de sustituir a EN-006. Cuando esa capacidad transversal exista, este registro es candidato a reconciliarse con ella; hasta entonces, vive en la persistencia propia de Community, igual que `CommentReport`.
+En su lugar, `CommentModerationAction` es el registro de auditoría **mínimo que HU-41 exige por sí misma** -actor, fecha, motivo, estado anterior y nuevo estado, y desde HU-41.8 también la IP de origen (Management#194 referencia EN-006 sin cerrarlo; ver más abajo)-, acotado a la moderación de comentarios y sin ninguna pretensión de sustituir a EN-006. Cuando esa capacidad transversal exista, este registro es candidato a reconciliarse con ella; hasta entonces, vive en la persistencia propia de Community, igual que `CommentReport`.
+
+### Auditoría reforzada (HU-41.8): IP, atomicidad e inmutabilidad
+
+El PDF fuente (7.3.5, Registro de auditoría) exige, para acciones administrativas, IP de origen además de actor/fecha/motivo/valores. HU-41.8 añade exactamente eso a `CommentModerationAction` -`ipAddress`- sin ampliar su alcance más allá: no se añaden `actorRole`, `correlationId` ni ningún otro campo sin una necesidad demostrable, y esto **no** es una implementación de `EN-006 — Trazabilidad y auditoría` (Management#194), que sigue sin Tasks ni decisión del Product Owner.
+
+- **La IP se resuelve EXCLUSIVAMENTE del servidor**, nunca del cuerpo de la petición: `CommentModerationController` usa `@Ip()` de NestJS sobre cada una de las cinco acciones, y `ValidationPipe({ forbidNonWhitelisted: true })` ya rechaza cualquier `ipAddress` que Web intente enviar en el body antes de que el caso de uso la vea. `main.ts` fija `app.set('trust proxy', 1)`: Community está siempre detrás de un único proxy inverso real (Caddy, `reverse_proxy` simple sin manipular cabeceras — ver el Caddyfile de `Nexus-Battle-Infrastructure`), así que confiar en exactamente un salto de `X-Forwarded-For` es lo que hace que `request.ip` refleje al jugador real y no a Caddy, sin abrir la puerta a que un cliente inyecte saltos adicionales falsos.
+- **Comentario y auditoría se escriben en una única transacción** (`CommentModerationTransactionPort`, con `PostgresCommentModerationTransaction` abriendo una transacción real de Kysely): si cualquiera de las dos escrituras falla, ninguna queda hecha. Antes de HU-41.8, `comments.save()` y `actions.save()` eran dos escrituras independientes que podían dejar estado parcial ante un fallo intermedio.
+- **`comment_moderation_actions` es append-only frente al motor, no solo frente al código**: la migración de HU-41.8 añade un disparador (`comment_moderation_actions_solo_insercion`) que hace fallar cualquier `UPDATE`/`DELETE` directo sobre la tabla, y `PostgresCommentModerationActionRepository.save()` ya NO usa `ON CONFLICT DO NOTHING` -una colisión de id ahora falla de forma audible en vez de hacer desaparecer evidencia en silencio-.
+- Los registros anteriores a esta migración conservan `ip_address = NULL`: no se inventa una IP retroactiva para evidencia que nunca se capturó.
 
 `ProductComment` gana un `moderationStatus` (`PENDING` al publicarse, y uno de `APPROVED`/`DELETED`/`HIDDEN`/`EDITED`/`MARKED` tras la acción correspondiente, uno a uno). HU-41 no declara ninguna transición vetada entre esos cinco estados: un comentario oculto puede aprobarse después. "Eliminar" es un borrado **lógico** -la fila permanece con `DELETED`-, no físico: borrar la fila destruiría la evidencia que la propia historia exige conservar.
 
@@ -91,16 +100,17 @@ La cola de moderación (`GET /comments/moderation-queue`, HU-41.1) se construye 
 
 ## Puertos
 
-| Puerto                                  | Responsabilidad                                                | Implementación actual                                                                     |
-| --------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `ThreadRepositoryPort`                  | Persistir, recuperar y listar hilos                            | `InMemoryThreadRepository` / `PostgresThreadRepository`                                   |
-| `ProductCommentRepositoryPort`          | Persistir y listar (paginados) comentarios de producto         | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository`                   |
-| `ProductReviewRepositoryPort`           | Persistir calificaciones y calcular su resumen                 | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`                     |
-| `CommentReportRepositoryPort`           | Persistir reportes y construir la cola de moderación (HU-41.1) | `InMemoryCommentReportRepository` / `PostgresCommentReportRepository`                     |
-| `CommentModerationActionRepositoryPort` | Persistir y consultar la auditoría de moderación (HU-41.3)     | `InMemoryCommentModerationActionRepository` / `PostgresCommentModerationActionRepository` |
-| `ProductExistencePort`                  | Confirmar que un producto existe                               | `LocalProductCatalog`                                                                     |
-| `ClockPort`                             | Proveer el instante actual                                     | `SystemClock`                                                                             |
-| `IdGeneratorPort`                       | Generar identificadores                                        | `UuidGenerator`                                                                           |
+| Puerto                                  | Responsabilidad                                                            | Implementación actual                                                                     |
+| --------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `ThreadRepositoryPort`                  | Persistir, recuperar y listar hilos                                        | `InMemoryThreadRepository` / `PostgresThreadRepository`                                   |
+| `ProductCommentRepositoryPort`          | Persistir y listar (paginados) comentarios de producto                     | `InMemoryProductCommentRepository` / `PostgresProductCommentRepository`                   |
+| `ProductReviewRepositoryPort`           | Persistir calificaciones y calcular su resumen                             | `InMemoryProductReviewRepository` / `PostgresProductReviewRepository`                     |
+| `CommentReportRepositoryPort`           | Persistir reportes y construir la cola de moderación (HU-41.1)             | `InMemoryCommentReportRepository` / `PostgresCommentReportRepository`                     |
+| `CommentModerationActionRepositoryPort` | Persistir y consultar la auditoría de moderación (HU-41.3/41.8)            | `InMemoryCommentModerationActionRepository` / `PostgresCommentModerationActionRepository` |
+| `CommentModerationTransactionPort`      | Atomicidad de comentario + auditoría en una acción de moderación (HU-41.8) | `InMemoryCommentModerationTransaction` / `PostgresCommentModerationTransaction`           |
+| `ProductExistencePort`                  | Confirmar que un producto existe                                           | `LocalProductCatalog`                                                                     |
+| `ClockPort`                             | Proveer el instante actual                                                 | `SystemClock`                                                                             |
+| `IdGeneratorPort`                       | Generar identificadores                                                    | `UuidGenerator`                                                                           |
 
 ## Patrones aplicados
 
@@ -145,6 +155,6 @@ No se registra el contenido de los mensajes.
 - **Las imágenes de comentario se guardan como referencia (URL), no como archivo subido.** No existe todavía almacenamiento propio de objetos en Community: la decisión de si se reutiliza el bucket S3 de Catalog o se solicita uno nuevo está pendiente en el Enabler EN-028 de `Nexus-Battle-Management`.
 - El promedio de calificación de un producto se calcula y expone solo desde Community (`GET /products/:productId/reviews/summary`); no se escribe en el producto canónico de Catalog. Ese endpoint interno es una integración coordinada pero separada, del lado de Catalog.
 - **La cola de moderación (HU-41.1) solo incluye comentarios reportados.** No existe ningún filtro automático de lenguaje ofensivo en ningún servicio del org; cuando exista, deberá alimentar la misma cola sin cambiar el contrato de `GET /comments/moderation-queue`.
-- **El registro de auditoría de moderación (`CommentModerationAction`, HU-41.3) es propio de Community, no la capacidad transversal de `EN-006 — Trazabilidad y auditoría`.** EN-006 sigue sin Tasks ni decisión del Product Owner sobre dónde vive; este registro es el mínimo que HU-41 exige por sí misma y queda documentado como candidato a reconciliarse con EN-006 cuando esta exista.
+- **El registro de auditoría de moderación (`CommentModerationAction`, HU-41.3/41.8) es propio de Community, no la capacidad transversal de `EN-006 — Trazabilidad y auditoría` (Management#194).** EN-006 sigue sin Tasks ni decisión del Product Owner sobre dónde vive; este registro es el mínimo que HU-41 exige por sí misma (incluida la IP de origen que añade HU-41.8) y queda documentado como candidato a reconciliarse con EN-006 cuando esta exista.
 
 Estas limitaciones están declaradas de forma explícita para que la arquitectura de demo no se confunda con la arquitectura objetivo.

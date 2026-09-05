@@ -62,6 +62,7 @@ import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
 import { PRODUCT_RATING_PUBLISHER } from '../../application/ports/ProductRatingPublisherPort'
 import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
 import { COMMENT_MODERATION_ACTION_REPOSITORY } from '../../application/ports/CommentModerationActionRepositoryPort'
+import { COMMENT_MODERATION_TRANSACTION } from '../../application/ports/CommentModerationTransactionPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
@@ -71,6 +72,7 @@ import type { ProductExistencePort } from '../../application/ports/ProductExiste
 import type { ProductRatingPublisherPort } from '../../application/ports/ProductRatingPublisherPort'
 import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
 import type { CommentModerationActionRepositoryPort } from '../../application/ports/CommentModerationActionRepositoryPort'
+import type { CommentModerationTransactionPort } from '../../application/ports/CommentModerationTransactionPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
@@ -84,6 +86,8 @@ import { InMemoryCommentReportRepository } from '../../adapters/outbound/persist
 import { PostgresCommentReportRepository } from '../../adapters/outbound/persistence/PostgresCommentReportRepository'
 import { InMemoryCommentModerationActionRepository } from '../../adapters/outbound/persistence/InMemoryCommentModerationActionRepository'
 import { PostgresCommentModerationActionRepository } from '../../adapters/outbound/persistence/PostgresCommentModerationActionRepository'
+import { InMemoryCommentModerationTransaction } from '../../adapters/outbound/persistence/InMemoryCommentModerationTransaction'
+import { PostgresCommentModerationTransaction } from '../../adapters/outbound/persistence/PostgresCommentModerationTransaction'
 import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
@@ -92,7 +96,10 @@ import { HttpCatalogRatingClient } from '../../adapters/outbound/catalog/HttpCat
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 
+import type { Kysely } from 'kysely'
+
 import { createDatabase } from '../persistence/database'
+import type { Database } from '../../adapters/outbound/persistence/schema'
 import { createLogger, type Logger } from '../observability/logger'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 
@@ -106,6 +113,14 @@ import type { ReadinessCheck, VersionReport } from '../health/health'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
+/**
+ * Instancia compartida de Kysely para todo lo que HU-41.8 exige atomico:
+ * `product_comments` y `comment_moderation_actions` deben escribirse en la
+ * MISMA transaccion, y eso exige la MISMA conexion de pool -- de ahi que,
+ * a diferencia del resto de repositorios de este modulo, no cada uno cree
+ * su propia instancia con `createDatabase`.
+ */
+export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
 
 /**
  * Raiz de composicion.
@@ -168,23 +183,36 @@ export const LOGGER = Symbol('Logger')
       inject: [APP_CONFIG, LOGGER],
     },
     {
+      // Solo se construye para PostgreSQL: es la conexion que
+      // `PRODUCT_COMMENT_REPOSITORY`, `COMMENT_MODERATION_ACTION_REPOSITORY`
+      // y `COMMENT_MODERATION_TRANSACTION` comparten para poder abrir una
+      // transaccion real entre las dos primeras (HU-41.8).
+      provide: COMMENT_MODERATION_DATABASE,
+      useFactory: (config: AppConfig): Kysely<Database> | null =>
+        config.persistenceDriver === PersistenceDriver.Postgres && config.databaseUrl !== null
+          ? createDatabase({ connectionString: config.databaseUrl })
+          : null,
+      inject: [APP_CONFIG],
+    },
+    {
       // Comparte driver con THREAD_REPOSITORY: si el servicio corre sobre
       // PostgreSQL, todos sus repositorios lo hacen.
       provide: PRODUCT_COMMENT_REPOSITORY,
-      useFactory: (config: AppConfig): ProductCommentRepositoryPort => {
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+      ): ProductCommentRepositoryPort => {
         if (config.persistenceDriver !== PersistenceDriver.Postgres) {
           return new InMemoryProductCommentRepository()
         }
 
-        if (config.databaseUrl === null) {
+        if (db === null) {
           throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
         }
 
-        return new PostgresProductCommentRepository(
-          createDatabase({ connectionString: config.databaseUrl }),
-        )
+        return new PostgresProductCommentRepository(db)
       },
-      inject: [APP_CONFIG],
+      inject: [APP_CONFIG, COMMENT_MODERATION_DATABASE],
     },
     {
       provide: PRODUCT_REVIEW_REPOSITORY,
@@ -257,20 +285,50 @@ export const LOGGER = Symbol('Logger')
     },
     {
       provide: COMMENT_MODERATION_ACTION_REPOSITORY,
-      useFactory: (config: AppConfig): CommentModerationActionRepositoryPort => {
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+      ): CommentModerationActionRepositoryPort => {
         if (config.persistenceDriver !== PersistenceDriver.Postgres) {
           return new InMemoryCommentModerationActionRepository()
         }
 
-        if (config.databaseUrl === null) {
+        if (db === null) {
           throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
         }
 
-        return new PostgresCommentModerationActionRepository(
-          createDatabase({ connectionString: config.databaseUrl }),
-        )
+        return new PostgresCommentModerationActionRepository(db)
       },
-      inject: [APP_CONFIG],
+      inject: [APP_CONFIG, COMMENT_MODERATION_DATABASE],
+    },
+    {
+      provide: COMMENT_MODERATION_TRANSACTION,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        comments: ProductCommentRepositoryPort,
+        actions: CommentModerationActionRepositoryPort,
+      ): CommentModerationTransactionPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          // Reutiliza las MISMAS instancias en memoria que ya resolvieron
+          // PRODUCT_COMMENT_REPOSITORY y COMMENT_MODERATION_ACTION_REPOSITORY:
+          // construir otras nuevas aqui las desincronizaria del resto de la
+          // aplicacion.
+          return new InMemoryCommentModerationTransaction({ comments, actions })
+        }
+
+        if (db === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresCommentModerationTransaction(db)
+      },
+      inject: [
+        APP_CONFIG,
+        COMMENT_MODERATION_DATABASE,
+        PRODUCT_COMMENT_REPOSITORY,
+        COMMENT_MODERATION_ACTION_REPOSITORY,
+      ],
     },
     {
       provide: TOKEN_VERIFIER,
@@ -454,77 +512,47 @@ export const LOGGER = Symbol('Logger')
     {
       provide: APPROVE_COMMENT,
       useFactory: (
-        comments: ProductCommentRepositoryPort,
-        actions: CommentModerationActionRepositoryPort,
+        transaction: CommentModerationTransactionPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): ApproveComment => new ApproveComment({ comments, actions, clock, ids }),
-      inject: [
-        PRODUCT_COMMENT_REPOSITORY,
-        COMMENT_MODERATION_ACTION_REPOSITORY,
-        CLOCK,
-        ID_GENERATOR,
-      ],
+      ): ApproveComment => new ApproveComment({ transaction, clock, ids }),
+      inject: [COMMENT_MODERATION_TRANSACTION, CLOCK, ID_GENERATOR],
     },
     {
       provide: HIDE_COMMENT,
       useFactory: (
-        comments: ProductCommentRepositoryPort,
-        actions: CommentModerationActionRepositoryPort,
+        transaction: CommentModerationTransactionPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): HideComment => new HideComment({ comments, actions, clock, ids }),
-      inject: [
-        PRODUCT_COMMENT_REPOSITORY,
-        COMMENT_MODERATION_ACTION_REPOSITORY,
-        CLOCK,
-        ID_GENERATOR,
-      ],
+      ): HideComment => new HideComment({ transaction, clock, ids }),
+      inject: [COMMENT_MODERATION_TRANSACTION, CLOCK, ID_GENERATOR],
     },
     {
       provide: DELETE_COMMENT,
       useFactory: (
-        comments: ProductCommentRepositoryPort,
-        actions: CommentModerationActionRepositoryPort,
+        transaction: CommentModerationTransactionPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): DeleteComment => new DeleteComment({ comments, actions, clock, ids }),
-      inject: [
-        PRODUCT_COMMENT_REPOSITORY,
-        COMMENT_MODERATION_ACTION_REPOSITORY,
-        CLOCK,
-        ID_GENERATOR,
-      ],
+      ): DeleteComment => new DeleteComment({ transaction, clock, ids }),
+      inject: [COMMENT_MODERATION_TRANSACTION, CLOCK, ID_GENERATOR],
     },
     {
       provide: EDIT_COMMENT,
       useFactory: (
-        comments: ProductCommentRepositoryPort,
-        actions: CommentModerationActionRepositoryPort,
+        transaction: CommentModerationTransactionPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): EditComment => new EditComment({ comments, actions, clock, ids }),
-      inject: [
-        PRODUCT_COMMENT_REPOSITORY,
-        COMMENT_MODERATION_ACTION_REPOSITORY,
-        CLOCK,
-        ID_GENERATOR,
-      ],
+      ): EditComment => new EditComment({ transaction, clock, ids }),
+      inject: [COMMENT_MODERATION_TRANSACTION, CLOCK, ID_GENERATOR],
     },
     {
       provide: MARK_COMMENT,
       useFactory: (
-        comments: ProductCommentRepositoryPort,
-        actions: CommentModerationActionRepositoryPort,
+        transaction: CommentModerationTransactionPort,
         clock: ClockPort,
         ids: IdGeneratorPort,
-      ): MarkComment => new MarkComment({ comments, actions, clock, ids }),
-      inject: [
-        PRODUCT_COMMENT_REPOSITORY,
-        COMMENT_MODERATION_ACTION_REPOSITORY,
-        CLOCK,
-        ID_GENERATOR,
-      ],
+      ): MarkComment => new MarkComment({ transaction, clock, ids }),
+      inject: [COMMENT_MODERATION_TRANSACTION, CLOCK, ID_GENERATOR],
     },
     {
       provide: READINESS_CHECKS,

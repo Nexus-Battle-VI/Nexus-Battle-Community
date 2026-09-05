@@ -10,6 +10,7 @@ import { CommentNotFoundError } from '../../src/application/errors/ApplicationEr
 import { InMemoryProductCommentRepository } from '../../src/adapters/outbound/persistence/InMemoryProductCommentRepository'
 import { InMemoryCommentModerationActionRepository } from '../../src/adapters/outbound/persistence/InMemoryCommentModerationActionRepository'
 import { InMemoryCommentReportRepository } from '../../src/adapters/outbound/persistence/InMemoryCommentReportRepository'
+import { InMemoryCommentModerationTransaction } from '../../src/adapters/outbound/persistence/InMemoryCommentModerationTransaction'
 import { ProductComment } from '../../src/domain/entities/ProductComment'
 import { CommentReport } from '../../src/domain/entities/CommentReport'
 import { AuthorId } from '../../src/domain/value-objects/community-values'
@@ -56,7 +57,11 @@ const buildHarness = (): Harness => {
   const actions = new InMemoryCommentModerationActionRepository()
   const reports = new InMemoryCommentReportRepository()
   const clock = { now: (): Date => FIXED_NOW }
-  const deps = { comments, actions, clock, ids: { generate: sequence('mod') } }
+  const deps = {
+    transaction: new InMemoryCommentModerationTransaction({ comments, actions }),
+    clock,
+    ids: { generate: sequence('mod') },
+  }
 
   const seedComment = async (id = 'comment-1'): Promise<string> => {
     await comments.save(
@@ -87,6 +92,8 @@ const buildHarness = (): Harness => {
   }
 }
 
+const IP = '203.0.113.10'
+
 describe('Acciones de moderacion (HU-41.2)', () => {
   it('aprobar mueve PENDING -> APPROVED y devuelve el comentario actualizado', async () => {
     const h = buildHarness()
@@ -96,6 +103,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       commentId,
       actorId: 'acc-moderador',
       reason: 'Cumple las normas de la comunidad.',
+      ipAddress: IP,
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Approved)
@@ -109,6 +117,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       commentId,
       actorId: 'acc-moderador',
       reason: 'Contenido ofensivo.',
+      ipAddress: IP,
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Hidden)
@@ -122,6 +131,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       commentId,
       actorId: 'acc-moderador',
       reason: 'Infringe los terminos de uso.',
+      ipAddress: IP,
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Deleted)
@@ -137,6 +147,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       actorId: 'acc-moderador',
       reason: 'Se retiro un enlace externo.',
       content: 'Buen producto. [Enlace retirado por moderacion.]',
+      ipAddress: IP,
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Edited)
@@ -151,6 +162,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       commentId,
       actorId: 'acc-moderador',
       reason: 'Requiere seguimiento.',
+      ipAddress: IP,
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Marked)
@@ -158,7 +170,12 @@ describe('Acciones de moderacion (HU-41.2)', () => {
 
   it('falla con CommentNotFoundError cuando el comentario no existe, en las cinco acciones', async () => {
     const h = buildHarness()
-    const command = { commentId: 'inexistente', actorId: 'acc-moderador', reason: 'Motivo.' }
+    const command = {
+      commentId: 'inexistente',
+      actorId: 'acc-moderador',
+      reason: 'Motivo.',
+      ipAddress: IP,
+    }
 
     await expect(h.approve.execute(command)).rejects.toBeInstanceOf(CommentNotFoundError)
     await expect(h.hide.execute(command)).rejects.toBeInstanceOf(CommentNotFoundError)
@@ -174,7 +191,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
     const commentId = await h.seedComment()
 
     await expect(
-      h.approve.execute({ commentId, actorId: 'acc-moderador', reason: '   ' }),
+      h.approve.execute({ commentId, actorId: 'acc-moderador', reason: '   ', ipAddress: IP }),
     ).rejects.toBeInstanceOf(DomainError)
 
     const comment = await h.comments.findById(ProductCommentId.create(commentId))
@@ -183,15 +200,20 @@ describe('Acciones de moderacion (HU-41.2)', () => {
   })
 
   /**
-   * HU-41.3: cada accion exitosa deja un registro de auditoria con actor,
-   * motivo, estado anterior y nuevo estado -- no solo el efecto sobre el
-   * comentario.
+   * HU-41.3/41.8: cada accion exitosa deja un registro de auditoria con
+   * actor, motivo, estado anterior, nuevo estado E IP -- no solo el efecto
+   * sobre el comentario.
    */
-  it('registra la auditoria de la accion con actor, motivo y ambos estados', async () => {
+  it('registra la auditoria de la accion con actor, motivo, ambos estados e IP', async () => {
     const h = buildHarness()
     const commentId = await h.seedComment()
 
-    await h.hide.execute({ commentId, actorId: 'acc-moderador', reason: 'Contenido ofensivo.' })
+    await h.hide.execute({
+      commentId,
+      actorId: 'acc-moderador',
+      reason: 'Contenido ofensivo.',
+      ipAddress: IP,
+    })
 
     const history = await h.actions.listByComment(ProductCommentId.create(commentId))
 
@@ -203,15 +225,70 @@ describe('Acciones de moderacion (HU-41.2)', () => {
       reason: 'Contenido ofensivo.',
       previousStatus: 'PENDING',
       newStatus: 'HIDDEN',
+      ipAddress: IP,
     })
   })
 
-  it('un comentario puede acumular varias acciones, todas auditadas', async () => {
+  it('cada una de las cinco acciones captura la IP resuelta por el servidor, nunca del body', async () => {
+    const h = buildHarness()
+
+    const acciones: readonly [string, (id: string) => Promise<unknown>][] = [
+      [
+        'approve',
+        (id) =>
+          h.approve.execute({ commentId: id, actorId: 'acc-mod', reason: 'M.', ipAddress: IP }),
+      ],
+      [
+        'hide',
+        (id) => h.hide.execute({ commentId: id, actorId: 'acc-mod', reason: 'M.', ipAddress: IP }),
+      ],
+      [
+        'remove',
+        (id) =>
+          h.remove.execute({ commentId: id, actorId: 'acc-mod', reason: 'M.', ipAddress: IP }),
+      ],
+      [
+        'edit',
+        (id) =>
+          h.edit.execute({
+            commentId: id,
+            actorId: 'acc-mod',
+            reason: 'M.',
+            content: 'C.',
+            ipAddress: IP,
+          }),
+      ],
+      [
+        'mark',
+        (id) => h.mark.execute({ commentId: id, actorId: 'acc-mod', reason: 'M.', ipAddress: IP }),
+      ],
+    ]
+
+    for (const [nombre, ejecutar] of acciones) {
+      const commentId = await h.seedComment(`comment-${nombre}`)
+      await ejecutar(commentId)
+
+      const history = await h.actions.listByComment(ProductCommentId.create(commentId))
+      expect(history[0]?.ipAddress?.value).toBe(IP)
+    }
+  })
+
+  it('un comentario puede acumular varias acciones, todas auditadas de forma independiente', async () => {
     const h = buildHarness()
     const commentId = await h.seedComment()
 
-    await h.hide.execute({ commentId, actorId: 'acc-moderador', reason: 'Motivo 1.' })
-    await h.approve.execute({ commentId, actorId: 'acc-otro-moderador', reason: 'Motivo 2.' })
+    await h.hide.execute({
+      commentId,
+      actorId: 'acc-moderador',
+      reason: 'Motivo 1.',
+      ipAddress: IP,
+    })
+    await h.approve.execute({
+      commentId,
+      actorId: 'acc-otro-moderador',
+      reason: 'Motivo 2.',
+      ipAddress: '198.51.100.20',
+    })
 
     // Ambas acciones comparten el mismo reloj fijo: solo el conteo y el
     // conjunto de acciones son deterministas aqui, no el orden -- el orden por
@@ -220,6 +297,7 @@ describe('Acciones de moderacion (HU-41.2)', () => {
     const history = await h.actions.listByComment(ProductCommentId.create(commentId))
     expect(history).toHaveLength(2)
     expect(history.map((a) => a.action).sort()).toEqual(['APPROVE', 'HIDE'])
+    expect(new Set(history.map((a) => a.id.value)).size).toBe(2)
   })
 })
 

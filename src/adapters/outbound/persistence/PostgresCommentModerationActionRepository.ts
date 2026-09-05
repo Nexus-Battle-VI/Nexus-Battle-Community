@@ -5,6 +5,7 @@ import { AuthorId } from '../../../domain/value-objects/community-values'
 import { ProductCommentId } from '../../../domain/value-objects/product-review-values'
 import {
   CommentModerationActionId,
+  IpAddress,
   ModerationReason,
 } from '../../../domain/value-objects/moderation-values'
 import type { CommentModerationActionRepositoryPort } from '../../../application/ports/CommentModerationActionRepositoryPort'
@@ -19,14 +20,17 @@ export class PostgresCommentModerationActionRepository implements CommentModerat
     this.db = db
   }
 
+  /**
+   * SIN `onConflict`: una colision de id sobre una tabla de auditoria
+   * append-only (HU-41.8) debe fallar de forma audible -violacion de clave
+   * primaria-, nunca ignorarse en silencio como si la escritura hubiera ido
+   * bien. `ON CONFLICT DO NOTHING` haria desaparecer evidencia sin que nadie
+   * se entere.
+   */
   async save(action: CommentModerationAction): Promise<void> {
     const row = toCommentModerationActionRow(action.toSnapshot())
 
-    await this.db
-      .insertInto('comment_moderation_actions')
-      .values(row)
-      .onConflict((oc) => oc.column('id').doNothing())
-      .execute()
+    await this.db.insertInto('comment_moderation_actions').values(row).execute()
   }
 
   async listByComment(commentId: ProductCommentId): Promise<readonly CommentModerationAction[]> {
@@ -52,6 +56,7 @@ export class PostgresCommentModerationActionRepository implements CommentModerat
       previousStatus: snapshot.previousStatus,
       newStatus: snapshot.newStatus,
       createdAt: new Date(snapshot.createdAt),
+      ipAddress: snapshot.ipAddress === null ? null : IpAddress.create(snapshot.ipAddress),
     })
   }
 }

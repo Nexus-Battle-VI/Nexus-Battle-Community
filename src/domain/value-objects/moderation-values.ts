@@ -117,3 +117,37 @@ export class ModerationReason {
     return this.value
   }
 }
+
+/**
+ * IP de origen de una accion de moderacion (HU-41.8, PDF fuente 7.3.5).
+ *
+ * Se construye EXCLUSIVAMENTE a partir de lo que el servidor resuelve de la
+ * peticion HTTP (`@Ip()`/`request.ip`, ver `main.ts` sobre `trust proxy`),
+ * nunca de un valor enviado por Web en el cuerpo -de eso ya se encarga
+ * `ValidationPipe({ forbidNonWhitelisted: true })`, que rechazaria cualquier
+ * `ipAddress` en el body antes de llegar aqui. No valida formato IPv4/IPv6:
+ * `request.ip` de Express ya es una direccion bien formada o la conexion no
+ * habria llegado a establecerse; el unico invariante propio del dominio es
+ * que no puede estar vacia.
+ */
+export class IpAddress {
+  readonly value: string
+
+  private constructor(value: string) {
+    this.value = value
+  }
+
+  static create(raw: string): IpAddress {
+    const normalized = raw.trim()
+
+    if (normalized.length === 0) {
+      throw new DomainError('La IP de la accion de moderacion no puede estar vacia.')
+    }
+
+    return new IpAddress(normalized)
+  }
+
+  toString(): string {
+    return this.value
+  }
+}

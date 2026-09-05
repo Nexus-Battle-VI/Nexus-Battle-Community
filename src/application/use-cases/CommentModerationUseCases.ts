@@ -3,13 +3,14 @@ import { AuthorId } from '../../domain/value-objects/community-values'
 import { CommentContent, ProductCommentId } from '../../domain/value-objects/product-review-values'
 import {
   CommentModerationActionId,
+  IpAddress,
   ModerationAction,
   ModerationReason,
 } from '../../domain/value-objects/moderation-values'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
 import type { ProductCommentRepositoryPort } from '../ports/ProductCommentRepositoryPort'
-import type { CommentModerationActionRepositoryPort } from '../ports/CommentModerationActionRepositoryPort'
+import type { CommentModerationTransactionPort } from '../ports/CommentModerationTransactionPort'
 import type {
   CommentReportRepositoryPort,
   ModerationQueuePage,
@@ -19,8 +20,7 @@ import { toProductCommentDto, type ProductCommentDto } from '../dto/ProductComme
 import { toModerationQueuePageDto, type ModerationQueuePageDto } from '../dto/ModerationQueueDto'
 
 export interface ModerateCommentDependencies {
-  readonly comments: ProductCommentRepositoryPort
-  readonly actions: CommentModerationActionRepositoryPort
+  readonly transaction: CommentModerationTransactionPort
   readonly clock: ClockPort
   readonly ids: IdGeneratorPort
 }
@@ -29,6 +29,8 @@ export interface ModerateCommentCommand {
   readonly commentId: string
   readonly actorId: string
   readonly reason: string
+  /** HU-41.8: resuelta EXCLUSIVAMENTE por el servidor, nunca por el body. */
+  readonly ipAddress: string
 }
 
 export interface EditCommentCommand extends ModerateCommentCommand {
@@ -36,13 +38,16 @@ export interface EditCommentCommand extends ModerateCommentCommand {
 }
 
 /**
- * Aplica una accion de moderacion y registra su auditoria (HU-41.2/41.3).
+ * Aplica una accion de moderacion y registra su auditoria (HU-41.2/41.3/41.8).
  *
  * Comun a las cinco acciones: resuelve el comentario (404 si no existe),
- * aplica la transicion en el agregado, PERSISTE el comentario y el registro
- * de auditoria, y solo entonces devuelve el resultado -si la accion se
- * rechaza (comentario inexistente, contenido invalido en `edit`), no se
- * escribe nada, ni el comentario ni la auditoria-.
+ * aplica la transicion en el agregado, y PERSISTE el comentario y el
+ * registro de auditoria dentro de la MISMA transaccion (HU-41.8): si
+ * cualquiera de las dos escrituras falla, ninguna de las dos queda hecha -ni
+ * el comentario actualizado sin su auditoria, ni la auditoria sin que el
+ * comentario refleje el nuevo estado-. Si la accion se rechaza antes de
+ * entrar a la transaccion (comentario inexistente, motivo invalido,
+ * contenido invalido en `edit`), no se escribe nada.
  */
 const applyModeration = async (
   deps: ModerateCommentDependencies,
@@ -51,29 +56,36 @@ const applyModeration = async (
   newContent?: CommentContent,
 ): Promise<ProductCommentDto> => {
   const commentId = ProductCommentId.create(command.commentId)
-  const comment = await deps.comments.findById(commentId)
+  const reason = ModerationReason.create(command.reason)
+  const ipAddress = IpAddress.create(command.ipAddress)
+  const occurredAt = deps.clock.now()
 
-  if (comment === null) {
-    throw new CommentNotFoundError(commentId.value)
-  }
+  return deps.transaction.run(async ({ comments, actions }) => {
+    const comment = await comments.findById(commentId)
 
-  const { previousStatus, newStatus } = comment.moderate({ action, newContent })
+    if (comment === null) {
+      throw new CommentNotFoundError(commentId.value)
+    }
 
-  const record = CommentModerationAction.record({
-    id: CommentModerationActionId.create(deps.ids.generate()),
-    commentId,
-    actorId: AuthorId.create(command.actorId),
-    action,
-    reason: ModerationReason.create(command.reason),
-    previousStatus,
-    newStatus,
-    occurredAt: deps.clock.now(),
+    const { previousStatus, newStatus } = comment.moderate({ action, newContent })
+
+    const record = CommentModerationAction.record({
+      id: CommentModerationActionId.create(deps.ids.generate()),
+      commentId,
+      actorId: AuthorId.create(command.actorId),
+      action,
+      reason,
+      previousStatus,
+      newStatus,
+      occurredAt,
+      ipAddress,
+    })
+
+    await comments.save(comment)
+    await actions.save(record)
+
+    return toProductCommentDto(comment.toSnapshot())
   })
-
-  await deps.comments.save(comment)
-  await deps.actions.save(record)
-
-  return toProductCommentDto(comment.toSnapshot())
 }
 
 export class ApproveComment {

@@ -11,6 +11,7 @@ import {
   ALL_MODERATION_ACTIONS,
   CommentModerationActionId,
   CommentModerationStatus,
+  IpAddress,
   ModerationAction,
   ModerationReason,
   isCommentModerationStatus,
@@ -137,9 +138,10 @@ describe('CommentModerationAction (HU-41.3)', () => {
       previousStatus: CommentModerationStatus.Pending,
       newStatus: CommentModerationStatus.Hidden,
       occurredAt: AT,
+      ipAddress: IpAddress.create('203.0.113.10'),
     })
 
-  it('conserva actor, motivo, estado anterior y nuevo estado (trazabilidad de HU-41.3)', () => {
+  it('conserva actor, motivo, estado anterior, nuevo estado e IP (trazabilidad de HU-41.3/41.8)', () => {
     const action = buildAction()
 
     expect(action.toSnapshot()).toEqual({
@@ -151,6 +153,7 @@ describe('CommentModerationAction (HU-41.3)', () => {
       previousStatus: 'PENDING',
       newStatus: 'HIDDEN',
       createdAt: AT.toISOString(),
+      ipAddress: '203.0.113.10',
     })
   })
 
@@ -166,8 +169,25 @@ describe('CommentModerationAction (HU-41.3)', () => {
       previousStatus: snapshot.previousStatus,
       newStatus: snapshot.newStatus,
       createdAt: new Date(snapshot.createdAt),
+      ipAddress: snapshot.ipAddress === null ? null : IpAddress.create(snapshot.ipAddress),
     })
 
     expect(restored.toSnapshot()).toEqual(original.toSnapshot())
+  })
+
+  it('restore acepta ipAddress null para compatibilidad con registros historicos', () => {
+    const restored = CommentModerationAction.restore({
+      id: CommentModerationActionId.create('mod-historico'),
+      commentId: ProductCommentId.create('comment-1'),
+      actorId: AuthorId.create('acc-moderador'),
+      action: ModerationAction.Hide,
+      reason: ModerationReason.create('Contenido ofensivo.'),
+      previousStatus: CommentModerationStatus.Pending,
+      newStatus: CommentModerationStatus.Hidden,
+      createdAt: AT,
+      ipAddress: null,
+    })
+
+    expect(restored.toSnapshot().ipAddress).toBeNull()
   })
 })

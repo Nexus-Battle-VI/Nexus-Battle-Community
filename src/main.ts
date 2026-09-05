@@ -3,6 +3,7 @@ import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe } from '@nestjs/common'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
+import type { NestExpressApplication } from '@nestjs/platform-express'
 
 import { AppModule } from './infrastructure/bootstrap/app.module'
 import { loadConfig } from './infrastructure/config/env'
@@ -16,7 +17,16 @@ const bootstrap = async (): Promise<void> => {
     version: config.version,
   })
 
-  const app = await NestFactory.create(AppModule, { logger: false })
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false })
+
+  // Community esta SIEMPRE detras de un unico proxy inverso real (Caddy,
+  // `reverse_proxy` simple sin manipular cabeceras: ver el Caddyfile de
+  // Nexus-Battle-Infrastructure). `trust proxy: 1` es lo que hace que
+  // `request.ip`/`@Ip()` (HU-41.8) resuelvan la IP real del cliente desde
+  // `X-Forwarded-For` confiando en ESE UNICO salto -nunca en cualquier valor
+  // que un cliente pudiera intentar inyectar mas alla de el-. Sin esto,
+  // `request.ip` seria siempre la IP de Caddy, no la del jugador.
+  app.set('trust proxy', 1)
 
   app.setGlobalPrefix(config.globalPrefix)
 

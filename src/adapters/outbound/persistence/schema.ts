@@ -139,6 +139,13 @@ export interface CommentModerationActionsTable {
   readonly previous_status: string
   readonly new_status: string
   readonly created_at: Date
+
+  /**
+   * IP de origen (HU-41.8, migracion 006). `NULL` solo en filas anteriores a
+   * esa migracion -compatibilidad hacia atras-; toda fila nueva la resuelve
+   * siempre desde el servidor, nunca del cuerpo de la peticion.
+   */
+  readonly ip_address: string | null
 }
 
 export interface Database {

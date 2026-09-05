@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Ip,
   NotFoundException,
   Param,
   Post,
@@ -86,9 +87,15 @@ export class CommentModerationController {
     @Param('commentId') commentId: string,
     @Body() body: ModerationActionRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Ip() ip: string,
   ): Promise<ProductCommentDto> {
     return await this.moderate(() =>
-      this.approveComment.execute({ commentId, actorId: identity.subject, reason: body.reason }),
+      this.approveComment.execute({
+        commentId,
+        actorId: identity.subject,
+        reason: body.reason,
+        ipAddress: ip,
+      }),
     )
   }
 
@@ -102,9 +109,15 @@ export class CommentModerationController {
     @Param('commentId') commentId: string,
     @Body() body: ModerationActionRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Ip() ip: string,
   ): Promise<ProductCommentDto> {
     return await this.moderate(() =>
-      this.hideComment.execute({ commentId, actorId: identity.subject, reason: body.reason }),
+      this.hideComment.execute({
+        commentId,
+        actorId: identity.subject,
+        reason: body.reason,
+        ipAddress: ip,
+      }),
     )
   }
 
@@ -126,9 +139,15 @@ export class CommentModerationController {
     @Param('commentId') commentId: string,
     @Body() body: ModerationActionRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Ip() ip: string,
   ): Promise<ProductCommentDto> {
     return await this.moderate(() =>
-      this.deleteComment.execute({ commentId, actorId: identity.subject, reason: body.reason }),
+      this.deleteComment.execute({
+        commentId,
+        actorId: identity.subject,
+        reason: body.reason,
+        ipAddress: ip,
+      }),
     )
   }
 
@@ -142,6 +161,7 @@ export class CommentModerationController {
     @Param('commentId') commentId: string,
     @Body() body: EditCommentRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Ip() ip: string,
   ): Promise<ProductCommentDto> {
     return await this.moderate(() =>
       this.editComment.execute({
@@ -149,6 +169,7 @@ export class CommentModerationController {
         actorId: identity.subject,
         reason: body.reason,
         content: body.content,
+        ipAddress: ip,
       }),
     )
   }
@@ -163,9 +184,15 @@ export class CommentModerationController {
     @Param('commentId') commentId: string,
     @Body() body: ModerationActionRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Ip() ip: string,
   ): Promise<ProductCommentDto> {
     return await this.moderate(() =>
-      this.markComment.execute({ commentId, actorId: identity.subject, reason: body.reason }),
+      this.markComment.execute({
+        commentId,
+        actorId: identity.subject,
+        reason: body.reason,
+        ipAddress: ip,
+      }),
     )
   }
 

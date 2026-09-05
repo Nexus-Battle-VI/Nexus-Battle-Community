@@ -6,6 +6,7 @@ import { AuthorId } from '../../../domain/value-objects/community-values'
 import { ProductCommentId } from '../../../domain/value-objects/product-review-values'
 import {
   CommentModerationActionId,
+  IpAddress,
   ModerationReason,
 } from '../../../domain/value-objects/moderation-values'
 import type { CommentModerationActionRepositoryPort } from '../../../application/ports/CommentModerationActionRepositoryPort'
@@ -46,6 +47,7 @@ export class InMemoryCommentModerationActionRepository implements CommentModerat
       previousStatus: snapshot.previousStatus,
       newStatus: snapshot.newStatus,
       createdAt: new Date(snapshot.createdAt),
+      ipAddress: snapshot.ipAddress === null ? null : IpAddress.create(snapshot.ipAddress),
     })
   }
 }

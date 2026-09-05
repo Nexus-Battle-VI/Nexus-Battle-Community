@@ -174,6 +174,7 @@ export interface CommentModerationActionRow {
   readonly previous_status: string
   readonly new_status: string
   readonly created_at: Date
+  readonly ip_address: string | null
 }
 
 const asModerationStatus = (
@@ -208,6 +209,7 @@ export const toCommentModerationActionSnapshot = (
     previousStatus: asModerationStatus(row.previous_status, row.id, 'estado anterior'),
     newStatus: asModerationStatus(row.new_status, row.id, 'estado nuevo'),
     createdAt: row.created_at.toISOString(),
+    ipAddress: row.ip_address,
   }
 }
 
@@ -231,6 +233,7 @@ export const toCommentModerationActionRow = (
     previous_status: snapshot.previousStatus,
     new_status: snapshot.newStatus,
     created_at: createdAt,
+    ip_address: snapshot.ipAddress,
   }
 }
 
