@@ -2,11 +2,7 @@ import type { Kysely } from 'kysely'
 
 import type { CommentReport } from '../../../domain/entities/CommentReport'
 import type { AuthorId } from '../../../domain/value-objects/community-values'
-import type {
-  CommentReportRepositoryPort,
-  ModerationQueuePage,
-  ModerationQueuePageResult,
-} from '../../../application/ports/CommentReportRepositoryPort'
+import type { CommentReportRepositoryPort } from '../../../application/ports/CommentReportRepositoryPort'
 import type { Database } from './schema'
 import { toCommentReportRow } from './mapping'
 
@@ -43,40 +39,5 @@ export class PostgresCommentReportRepository implements CommentReportRepositoryP
       .executeTakeFirstOrThrow()
 
     return Number(total)
-  }
-
-  /**
-   * Agrupa por `comment_id`: la cola de moderacion es de COMENTARIOS, no de
-   * reportes -- un comentario con tres reportes aparece una vez, no tres.
-   */
-  async listModerationQueue(page: ModerationQueuePage): Promise<ModerationQueuePageResult> {
-    const grouped = this.db
-      .selectFrom('comment_reports')
-      .select((eb) => [
-        'comment_id',
-        eb.fn.countAll().as('report_count'),
-        eb.fn.max('created_at').as('last_reported_at'),
-      ])
-      .groupBy('comment_id')
-
-    const rows = await grouped
-      .orderBy('last_reported_at', 'desc')
-      .limit(page.limit)
-      .offset(page.offset)
-      .execute()
-
-    const { total } = await this.db
-      .selectFrom(grouped.as('por_comentario'))
-      .select((eb) => eb.fn.countAll().as('total'))
-      .executeTakeFirstOrThrow()
-
-    return {
-      items: rows.map((row) => ({
-        commentId: row.comment_id,
-        reportCount: Number(row.report_count),
-        lastReportedAt: row.last_reported_at.toISOString(),
-      })),
-      total: Number(total),
-    }
   }
 }

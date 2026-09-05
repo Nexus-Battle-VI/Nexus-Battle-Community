@@ -49,8 +49,22 @@ export class ModerationQueueEntryResponse {
   @ApiProperty({ example: 3 })
   readonly reportCount!: number
 
-  @ApiProperty({ example: '2026-09-03T10:00:00.000Z' })
-  readonly lastReportedAt!: string
+  @ApiPropertyOptional({ example: '2026-09-03T10:00:00.000Z', nullable: true })
+  readonly lastReportedAt!: string | null
+
+  @ApiProperty({ example: 1, description: 'HU-41.7: coincidencias del filtro automatico.' })
+  readonly automaticFlagCount!: number
+
+  @ApiPropertyOptional({ example: '2026-09-03T10:00:00.000Z', nullable: true })
+  readonly lastAutomaticFlaggedAt!: string | null
+
+  @ApiProperty({
+    example: ['USER_REPORT'],
+    isArray: true,
+    enum: ['USER_REPORT', 'AUTOMATIC_FILTER'],
+    description: 'Origenes por los que el comentario esta en la cola (HU-41.1, Management#29).',
+  })
+  readonly sources!: readonly ('USER_REPORT' | 'AUTOMATIC_FILTER')[]
 }
 
 export class ModerationQueueResponse {

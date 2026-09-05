@@ -11,9 +11,9 @@ import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
 import type { ProductCommentRepositoryPort } from '../ports/ProductCommentRepositoryPort'
 import type { CommentModerationActionRepositoryPort } from '../ports/CommentModerationActionRepositoryPort'
 import type {
-  CommentReportRepositoryPort,
   ModerationQueuePage,
-} from '../ports/CommentReportRepositoryPort'
+  ModerationQueueRepositoryPort,
+} from '../ports/ModerationQueueRepositoryPort'
 import { CommentNotFoundError } from '../errors/ApplicationError'
 import { toProductCommentDto, type ProductCommentDto } from '../dto/ProductCommentDto'
 import { toModerationQueuePageDto, type ModerationQueuePageDto } from '../dto/ModerationQueueDto'
@@ -128,15 +128,14 @@ export class MarkComment {
 }
 
 /**
- * Consulta de la cola de moderacion (HU-41.1).
+ * Consulta de la cola de moderacion (HU-41.1, Management#29).
  *
- * La fuente es `CommentReportRepositoryPort.listModerationQueue`: sin
- * filtros automaticos de lenguaje ofensivo implementados en ningun servicio
- * del org, el reporte de otro jugador (HU-46, ya integrado) es la unica
- * entrada real por la que un comentario llega a la cola -no se inventa un
- * mecanismo de deteccion que no existe-.
+ * La fuente es `ModerationQueueRepositoryPort`, que combina DOS entradas: el
+ * reporte de otro jugador (HU-46) y la deteccion del filtro automatico de
+ * contenido (HU-41.7). Un comentario con ambos origenes aparece UNA sola vez
+ * -la agregacion por `commentId` vive en el repositorio, no aqui-.
  *
- * Un comentario reportado que ya no existe (por ejemplo, si en el futuro se
+ * Un comentario en cola que ya no existe (por ejemplo, si en el futuro se
  * permitiera un borrado fisico fuera de moderacion) se omite del resultado en
  * lugar de fallar toda la pagina: es una inconsistencia de datos, no un
  * motivo para negarle la cola entera al moderador.
@@ -147,7 +146,7 @@ const MAX_QUEUE_LIMIT = 100
 export class ListModerationQueue {
   constructor(
     private readonly deps: {
-      readonly reports: CommentReportRepositoryPort
+      readonly queue: ModerationQueueRepositoryPort
       readonly comments: ProductCommentRepositoryPort
     },
   ) {}
@@ -158,19 +157,29 @@ export class ListModerationQueue {
       offset: Math.max(query.offset ?? 0, 0),
     }
 
-    const queue = await this.deps.reports.listModerationQueue(page)
+    const queue = await this.deps.queue.listModerationQueue(page)
 
     const items = await Promise.all(
       queue.items.map(async (entry) => {
         const comment = await this.deps.comments.findById(ProductCommentId.create(entry.commentId))
 
-        return comment === null
-          ? null
-          : {
-              comment: toProductCommentDto(comment.toSnapshot()),
-              reportCount: entry.reportCount,
-              lastReportedAt: entry.lastReportedAt,
-            }
+        if (comment === null) {
+          return null
+        }
+
+        const sources = [
+          ...(entry.reportCount > 0 ? (['USER_REPORT'] as const) : []),
+          ...(entry.automaticFlagCount > 0 ? (['AUTOMATIC_FILTER'] as const) : []),
+        ]
+
+        return {
+          comment: toProductCommentDto(comment.toSnapshot()),
+          reportCount: entry.reportCount,
+          lastReportedAt: entry.lastReportedAt,
+          automaticFlagCount: entry.automaticFlagCount,
+          lastAutomaticFlaggedAt: entry.lastAutomaticFlaggedAt,
+          sources,
+        }
       }),
     )
 

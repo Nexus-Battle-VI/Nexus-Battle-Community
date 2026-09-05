@@ -62,6 +62,16 @@ export interface AppConfig {
   readonly internalServiceAuthSecret: string | null
   readonly internalServiceName: string
   readonly internalTimeoutMs: number
+  /**
+   * Filtro automatico de contenido (Management#29, HU-41.7): "deteccion
+   * automatica de palabras prohibidas o patrones sospechosos" (PDF fuente,
+   * 7.3.3). Sin vocabulario reutilizable en el org, la fuente es
+   * configuracion propia de Community, nunca una lista hardcodeada en el
+   * codigo de produccion. Vacia por defecto: sin configurar, el filtro no
+   * genera ninguna senal.
+   */
+  readonly commentModerationForbiddenTerms: readonly string[]
+  readonly commentModerationSuspiciousPatterns: readonly RegExp[]
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -120,6 +130,34 @@ const readString = (env: RawEnv, key: string, fallback: string): string => {
 
   return raw === undefined || raw === '' ? fallback : raw
 }
+
+/** Lista separada por comas, recortada y sin elementos vacios. */
+const readList = (env: RawEnv, key: string): readonly string[] => {
+  const raw = env[key]
+
+  if (raw === undefined || raw.trim() === '') {
+    return []
+  }
+
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+}
+
+/**
+ * Cada patron de la lista se compila como expresion regular. Uno invalido
+ * falla el arranque: un patron que no compila no debe descubrirse en
+ * produccion, la primera vez que un comentario lo ejercita.
+ */
+const readPatternList = (env: RawEnv, key: string): readonly RegExp[] =>
+  readList(env, key).map((source) => {
+    try {
+      return new RegExp(source, 'i')
+    } catch {
+      throw new ConfigurationError(`${key} contiene un patron invalido: "${source}".`)
+    }
+  })
 
 const readBoolean = (env: RawEnv, key: string, fallback: boolean): boolean => {
   const raw = env[key]
@@ -222,5 +260,12 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     internalServiceAuthSecret: internalServiceAuthSecret === '' ? null : internalServiceAuthSecret,
     internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'community'),
     internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 2_000, 100, 30_000),
+    commentModerationForbiddenTerms: readList(env, 'COMMENT_MODERATION_FORBIDDEN_TERMS').map(
+      (term) => term.toLowerCase(),
+    ),
+    commentModerationSuspiciousPatterns: readPatternList(
+      env,
+      'COMMENT_MODERATION_SUSPICIOUS_PATTERNS',
+    ),
   }
 }

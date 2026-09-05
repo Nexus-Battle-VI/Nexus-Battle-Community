@@ -4,11 +4,16 @@ import type { ProductCommentSnapshot } from '../../../domain/entities/ProductCom
 import type { ProductReviewSnapshot } from '../../../domain/entities/ProductReview'
 import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
 import type { CommentModerationActionSnapshot } from '../../../domain/entities/CommentModerationAction'
+import type { AutomaticModerationFlagSnapshot } from '../../../domain/entities/AutomaticModerationFlag'
 import {
   isCommentModerationStatus,
   isModerationAction,
   type CommentModerationStatus,
 } from '../../../domain/value-objects/moderation-values'
+import {
+  isModerationSignalRuleType,
+  isModerationSignalSource,
+} from '../../../domain/value-objects/moderation-signal-values'
 
 /**
  * Traduccion entre filas de PostgreSQL y la instantanea del agregado.
@@ -293,5 +298,60 @@ export const toProductReviewRow = (snapshot: ProductReviewSnapshot): ProductRevi
     author_id: snapshot.authorId,
     rating: snapshot.rating,
     created_at: createdAt,
+  }
+}
+
+export interface AutomaticModerationFlagRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly source: string
+  readonly rule_type: string
+  readonly rule_match: string
+  readonly detected_at: Date
+}
+
+export const toAutomaticModerationFlagSnapshot = (
+  row: AutomaticModerationFlagRow,
+): AutomaticModerationFlagSnapshot => {
+  if (!isModerationSignalSource(row.source)) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${row.id} tiene un origen desconocido: "${row.source}".`,
+    )
+  }
+
+  if (!isModerationSignalRuleType(row.rule_type)) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${row.id} tiene un tipo de regla desconocido: "${row.rule_type}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    source: row.source,
+    ruleType: row.rule_type,
+    match: row.rule_match,
+    detectedAt: row.detected_at.toISOString(),
+  }
+}
+
+export const toAutomaticModerationFlagRow = (
+  snapshot: AutomaticModerationFlagSnapshot,
+): AutomaticModerationFlagRow => {
+  const detectedAt = new Date(snapshot.detectedAt)
+
+  if (Number.isNaN(detectedAt.getTime())) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${snapshot.id} tiene una fecha invalida: "${snapshot.detectedAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    source: snapshot.source,
+    rule_type: snapshot.ruleType,
+    rule_match: snapshot.match,
+    detected_at: detectedAt,
   }
 }

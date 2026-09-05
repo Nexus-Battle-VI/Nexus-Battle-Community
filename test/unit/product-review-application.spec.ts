@@ -12,9 +12,17 @@ import {
 } from '../../src/application/errors/ApplicationError'
 import type { ProductExistencePort } from '../../src/application/ports/ProductExistencePort'
 import type { ProductRatingPublisherPort } from '../../src/application/ports/ProductRatingPublisherPort'
+import type { CommentContentModerationPolicyPort } from '../../src/application/ports/CommentContentModerationPolicyPort'
 import { InMemoryProductCommentRepository } from '../../src/adapters/outbound/persistence/InMemoryProductCommentRepository'
 import { InMemoryProductReviewRepository } from '../../src/adapters/outbound/persistence/InMemoryProductReviewRepository'
+import { InMemoryAutomaticModerationFlagRepository } from '../../src/adapters/outbound/persistence/InMemoryAutomaticModerationFlagRepository'
+import { InMemoryCommentPublicationTransaction } from '../../src/adapters/outbound/persistence/InMemoryCommentPublicationTransaction'
 import { DomainError } from '../../src/domain/errors/DomainError'
+
+/** Sin terminos ni patrones: estas pruebas no ejercitan HU-41.7. */
+const inertModerationPolicy: CommentContentModerationPolicyPort = {
+  evaluate: () => [],
+}
 
 const FIXED_NOW = new Date('2026-09-02T10:00:00.000Z')
 const PRODUCTO = '3f2a1e4c-6b7d-4a8e-9c1f-2d3e4f5a6b7c'
@@ -47,6 +55,7 @@ interface Harness {
 const buildHarness = (known: readonly string[] = [PRODUCTO, OTRO_PRODUCTO]): Harness => {
   const comments = new InMemoryProductCommentRepository()
   const reviews = new InMemoryProductReviewRepository()
+  const automaticModerationFlags = new InMemoryAutomaticModerationFlagRepository()
   const catalog = fakeCatalog(known)
   const clock = { now: (): Date => FIXED_NOW }
 
@@ -54,10 +63,14 @@ const buildHarness = (known: readonly string[] = [PRODUCTO, OTRO_PRODUCTO]): Har
     comments,
     reviews,
     publish: new PublishProductComment({
-      comments,
+      transaction: new InMemoryCommentPublicationTransaction({
+        comments,
+        automaticModerationFlags,
+      }),
       catalog,
       clock,
       ids: { generate: sequence('comment') },
+      moderationPolicy: inertModerationPolicy,
     }),
     list: new ListProductComments(comments),
     rate: new RateProduct({ reviews, catalog, clock, ids: { generate: sequence('review') } }),
