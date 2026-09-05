@@ -14,6 +14,7 @@ import { AuthorId } from '../../src/domain/value-objects/community-values'
 import { ProductCommentId } from '../../src/domain/value-objects/product-review-values'
 import {
   CommentModerationActionId,
+  IpAddress,
   ModerationReason,
 } from '../../src/domain/value-objects/moderation-values'
 
@@ -33,9 +34,11 @@ describe('PostgresCommentModerationActionRepository', () => {
     commentId: string
     action?: string
     createdAt?: Date
+    ipAddress?: string
+    id?: string
   }): CommentModerationAction =>
     CommentModerationAction.record({
-      id: CommentModerationActionId.create(randomUUID()),
+      id: CommentModerationActionId.create(params.id ?? randomUUID()),
       commentId: ProductCommentId.create(params.commentId),
       actorId: AuthorId.create('acc-moderador'),
       action: (params.action ?? 'HIDE') as CommentModerationAction['action'],
@@ -43,6 +46,7 @@ describe('PostgresCommentModerationActionRepository', () => {
       previousStatus: 'PENDING',
       newStatus: 'HIDDEN',
       occurredAt: params.createdAt ?? AT,
+      ipAddress: IpAddress.create(params.ipAddress ?? '203.0.113.10'),
     })
 
   beforeAll(async () => {
@@ -120,6 +124,83 @@ describe('PostgresCommentModerationActionRepository', () => {
       `.execute(db)
 
       expect(index.rows[0]?.indexdef).toContain('(comment_id, created_at)')
+    })
+  })
+
+  /**
+   * HU-41.8 (PDF fuente 7.3.5): la IP de origen se resuelve del servidor, se
+   * persiste, y la tabla es de solo insercion frente al motor -no solo
+   * frente al codigo de aplicacion-.
+   */
+  describe('IP de origen y proteccion append-only (HU-41.8)', () => {
+    it('persiste la IP capturada por el servidor', async () => {
+      const commentId = randomUUID()
+
+      await repository.save(buildAction({ commentId, ipAddress: '198.51.100.7' }))
+
+      const history = await repository.listByComment(ProductCommentId.create(commentId))
+
+      expect(history[0]?.ipAddress?.value).toBe('198.51.100.7')
+    })
+
+    it('acepta ip_address NULL para filas historicas (compatibilidad hacia atras)', async () => {
+      const commentId = randomUUID()
+
+      await db
+        .insertInto('comment_moderation_actions')
+        .values({
+          id: randomUUID(),
+          comment_id: commentId,
+          actor_id: 'acc-moderador',
+          action: 'HIDE',
+          reason: 'Registro historico sin IP.',
+          previous_status: 'PENDING',
+          new_status: 'HIDDEN',
+          created_at: AT,
+          ip_address: null,
+        })
+        .execute()
+
+      const history = await repository.listByComment(ProductCommentId.create(commentId))
+
+      expect(history[0]?.ipAddress).toBeNull()
+    })
+
+    it('una colision de id falla de forma audible y no se ignora en silencio', async () => {
+      const id = randomUUID()
+      const commentId = randomUUID()
+
+      await repository.save(buildAction({ id, commentId }))
+
+      await expect(repository.save(buildAction({ id, commentId }))).rejects.toThrow()
+    })
+
+    it('un UPDATE directo sobre la tabla falla: es de solo insercion', async () => {
+      const commentId = randomUUID()
+      await repository.save(buildAction({ commentId }))
+
+      await expect(
+        db
+          .updateTable('comment_moderation_actions')
+          .set({ reason: 'Motivo alterado.' })
+          .where('comment_id', '=', commentId)
+          .execute(),
+      ).rejects.toThrow()
+
+      const history = await repository.listByComment(ProductCommentId.create(commentId))
+      expect(history[0]?.reason.toString()).toBe('Motivo de prueba.')
+    })
+
+    it('un DELETE directo sobre la tabla falla: es de solo insercion', async () => {
+      const commentId = randomUUID()
+      await repository.save(buildAction({ commentId }))
+
+      await expect(
+        db.deleteFrom('comment_moderation_actions').where('comment_id', '=', commentId).execute(),
+      ).rejects.toThrow()
+
+      const history = await repository.listByComment(ProductCommentId.create(commentId))
+      expect(history).toHaveLength(1)
     })
   })
 

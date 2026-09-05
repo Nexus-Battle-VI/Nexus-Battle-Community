@@ -3,6 +3,7 @@ import type { ProductCommentId } from '../value-objects/product-review-values'
 import type {
   CommentModerationActionId,
   CommentModerationStatus,
+  IpAddress,
   ModerationAction,
   ModerationReason,
 } from '../value-objects/moderation-values'
@@ -16,6 +17,13 @@ export interface CommentModerationActionSnapshot {
   readonly previousStatus: CommentModerationStatus
   readonly newStatus: CommentModerationStatus
   readonly createdAt: string
+  /**
+   * IP de origen (HU-41.8). `null` solo en registros historicos anteriores a
+   * esta capacidad -la migracion los deja asi a proposito, ver
+   * `007-comment-moderation-action-ip.ts`-; toda accion NUEVA la resuelve
+   * siempre desde el servidor.
+   */
+  readonly ipAddress: string | null
 }
 
 /**
@@ -43,6 +51,7 @@ export class CommentModerationAction {
   readonly previousStatus: CommentModerationStatus
   readonly newStatus: CommentModerationStatus
   readonly createdAt: Date
+  readonly ipAddress: IpAddress | null
 
   private constructor(params: {
     id: CommentModerationActionId
@@ -53,6 +62,7 @@ export class CommentModerationAction {
     previousStatus: CommentModerationStatus
     newStatus: CommentModerationStatus
     createdAt: Date
+    ipAddress: IpAddress | null
   }) {
     this.id = params.id
     this.commentId = params.commentId
@@ -62,8 +72,14 @@ export class CommentModerationAction {
     this.previousStatus = params.previousStatus
     this.newStatus = params.newStatus
     this.createdAt = params.createdAt
+    this.ipAddress = params.ipAddress
   }
 
+  /**
+   * Registra una accion NUEVA. `ipAddress` es obligatoria aqui -a diferencia
+   * de `restore`-: HU-41.8 exige que toda accion nueva resuelva una IP valida
+   * desde el servidor, nunca que quede en blanco por comodidad.
+   */
   static record(params: {
     id: CommentModerationActionId
     commentId: ProductCommentId
@@ -73,6 +89,7 @@ export class CommentModerationAction {
     previousStatus: CommentModerationStatus
     newStatus: CommentModerationStatus
     occurredAt: Date
+    ipAddress: IpAddress
   }): CommentModerationAction {
     return new CommentModerationAction({ ...params, createdAt: params.occurredAt })
   }
@@ -86,6 +103,7 @@ export class CommentModerationAction {
     previousStatus: CommentModerationStatus
     newStatus: CommentModerationStatus
     createdAt: Date
+    ipAddress: IpAddress | null
   }): CommentModerationAction {
     return new CommentModerationAction(params)
   }
@@ -100,6 +118,7 @@ export class CommentModerationAction {
       previousStatus: this.previousStatus,
       newStatus: this.newStatus,
       createdAt: this.createdAt.toISOString(),
+      ipAddress: this.ipAddress === null ? null : this.ipAddress.value,
     }
   }
 }
