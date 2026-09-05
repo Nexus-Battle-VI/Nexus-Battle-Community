@@ -30,6 +30,15 @@ export const PersistenceDriver = {
 
 export type PersistenceDriver = (typeof PersistenceDriver)[keyof typeof PersistenceDriver]
 
+/** Almacenamiento de imagenes de comentario (HU-40, EN-028). */
+export const CommentImageStorageDriver = {
+  Memory: 'memory',
+  S3: 's3',
+} as const
+
+export type CommentImageStorageDriver =
+  (typeof CommentImageStorageDriver)[keyof typeof CommentImageStorageDriver]
+
 export interface AppConfig {
   readonly nodeEnv: 'development' | 'test' | 'production'
   readonly serviceName: string
@@ -62,6 +71,16 @@ export interface AppConfig {
   readonly internalServiceAuthSecret: string | null
   readonly internalServiceName: string
   readonly internalTimeoutMs: number
+  /**
+   * Almacenamiento de imagenes de comentario (HU-40, EN-028). Reutiliza el
+   * MISMO bucket que Catalog provisiono en EN-027.9 -- ver la decision
+   * aprobada en Management#299-, asi que comparte el nombre de variable
+   * `PRODUCT_ASSETS_BUCKET_NAME` con Catalog a proposito.
+   */
+  readonly commentImageStorageDriver: CommentImageStorageDriver
+  readonly commentImageBucketName: string | null
+  readonly commentImageRegion: string
+  readonly apiBaseUrl: string | null
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -187,6 +206,35 @@ export const loadConfig = (env: RawEnv): AppConfig => {
   const catalogInternalUrl = readString(env, 'CATALOG_INTERNAL_URL', '')
   const internalServiceAuthSecret = readString(env, 'INTERNAL_SERVICE_AUTH_SECRET', '')
 
+  const commentImageStorageDriver = readEnum(
+    env,
+    'COMMENT_IMAGE_STORAGE_DRIVER',
+    [CommentImageStorageDriver.Memory, CommentImageStorageDriver.S3],
+    CommentImageStorageDriver.Memory,
+  )
+
+  const commentImageBucketName = readString(env, 'PRODUCT_ASSETS_BUCKET_NAME', '') || null
+
+  if (
+    commentImageStorageDriver === CommentImageStorageDriver.S3 &&
+    (commentImageBucketName === null || commentImageBucketName === '')
+  ) {
+    throw new ConfigurationError(
+      'PRODUCT_ASSETS_BUCKET_NAME es obligatorio cuando COMMENT_IMAGE_STORAGE_DRIVER es "s3".',
+    )
+  }
+
+  const commentImageRegion = readString(env, 'AWS_REGION', 'us-east-1')
+  const apiBaseUrl = readString(env, 'API_BASE_URL', '').replace(/\/+$/, '') || null
+
+  // La referencia que persiste el comentario es la URL canonica de Community,
+  // nunca la URL firmada de S3, mismo criterio que ADR-016 en Catalog.
+  if (commentImageStorageDriver === CommentImageStorageDriver.S3 && apiBaseUrl === null) {
+    throw new ConfigurationError(
+      'API_BASE_URL es obligatorio cuando COMMENT_IMAGE_STORAGE_DRIVER es "s3".',
+    )
+  }
+
   const cognitoUserPoolId = readString(env, 'COGNITO_USER_POOL_ID', '')
   const cognitoClientId = readString(env, 'COGNITO_CLIENT_ID', '')
 
@@ -222,5 +270,9 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     internalServiceAuthSecret: internalServiceAuthSecret === '' ? null : internalServiceAuthSecret,
     internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'community'),
     internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 2_000, 100, 30_000),
+    commentImageStorageDriver,
+    commentImageBucketName,
+    commentImageRegion,
+    apiBaseUrl,
   }
 }

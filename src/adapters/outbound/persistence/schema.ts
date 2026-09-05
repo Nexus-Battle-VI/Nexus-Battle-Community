@@ -141,11 +141,34 @@ export interface CommentModerationActionsTable {
   readonly created_at: Date
 }
 
+/**
+ * Imagenes de comentario (HU-40, EN-028).
+ *
+ * Sin clave foranea a `product_comments`: la intencion se crea ANTES de que
+ * el comentario exista (el jugador sube la imagen primero, la referencia se
+ * adjunta al publicar).
+ */
+export interface CommentImageAssetsTable {
+  readonly asset_id: string
+  readonly author_id: string
+  readonly status: string
+  readonly content_type: string
+  readonly content_length: number
+  readonly checksum_sha256: string
+  readonly staging_key: string
+  readonly target_key: string | null
+  readonly image_url: string
+  readonly created_at: Date
+  readonly expires_at: Date
+  readonly finalized_at: Date | null
+}
+
 export interface Database {
   readonly threads: ThreadsTable
   readonly posts: PostsTable
   readonly product_comments: ProductCommentsTable
   readonly product_reviews: ProductReviewsTable
   readonly comment_reports: CommentReportsTable
+  readonly comment_image_assets: CommentImageAssetsTable
   readonly comment_moderation_actions: CommentModerationActionsTable
 }

@@ -6,6 +6,7 @@ import { MeController } from '../../adapters/inbound/http/me.controller'
 import { ProductCommentsController } from '../../adapters/inbound/http/product-comments.controller'
 import { CommentReportsController } from '../../adapters/inbound/http/comment-reports.controller'
 import { CommentModerationController } from '../../adapters/inbound/http/comment-moderation.controller'
+import { CommentImageAssetsController } from '../../adapters/inbound/http/comment-image-assets.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   CLOSE_THREAD,
@@ -26,6 +27,9 @@ import {
   DELETE_COMMENT,
   EDIT_COMMENT,
   MARK_COMMENT,
+  CREATE_COMMENT_IMAGE_UPLOAD_INTENT,
+  FINALIZE_COMMENT_IMAGE_ASSET,
+  GET_COMMENT_IMAGE_CONTENT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -55,6 +59,9 @@ import {
   ListModerationQueue,
   MarkComment,
 } from '../../application/use-cases/CommentModerationUseCases'
+import { CreateCommentImageUploadIntent } from '../../application/use-cases/CreateCommentImageUploadIntent'
+import { FinalizeCommentImageAsset } from '../../application/use-cases/FinalizeCommentImageAsset'
+import { GetCommentImageContent } from '../../application/use-cases/GetCommentImageContent'
 import { THREAD_REPOSITORY } from '../../application/ports/ThreadRepositoryPort'
 import { PRODUCT_COMMENT_REPOSITORY } from '../../application/ports/ProductCommentRepositoryPort'
 import { PRODUCT_REVIEW_REPOSITORY } from '../../application/ports/ProductReviewRepositoryPort'
@@ -62,6 +69,8 @@ import { PRODUCT_EXISTENCE } from '../../application/ports/ProductExistencePort'
 import { PRODUCT_RATING_PUBLISHER } from '../../application/ports/ProductRatingPublisherPort'
 import { COMMENT_REPORT_REPOSITORY } from '../../application/ports/CommentReportRepositoryPort'
 import { COMMENT_MODERATION_ACTION_REPOSITORY } from '../../application/ports/CommentModerationActionRepositoryPort'
+import { COMMENT_IMAGE_ASSET_REPOSITORY } from '../../application/ports/CommentImageAssetRepositoryPort'
+import { COMMENT_IMAGE_STORAGE } from '../../application/ports/CommentImageStoragePort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import type { ThreadRepositoryPort } from '../../application/ports/ThreadRepositoryPort'
@@ -71,6 +80,8 @@ import type { ProductExistencePort } from '../../application/ports/ProductExiste
 import type { ProductRatingPublisherPort } from '../../application/ports/ProductRatingPublisherPort'
 import type { CommentReportRepositoryPort } from '../../application/ports/CommentReportRepositoryPort'
 import type { CommentModerationActionRepositoryPort } from '../../application/ports/CommentModerationActionRepositoryPort'
+import type { CommentImageAssetRepositoryPort } from '../../application/ports/CommentImageAssetRepositoryPort'
+import type { CommentImageStoragePort } from '../../application/ports/CommentImageStoragePort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 
@@ -84,6 +95,10 @@ import { InMemoryCommentReportRepository } from '../../adapters/outbound/persist
 import { PostgresCommentReportRepository } from '../../adapters/outbound/persistence/PostgresCommentReportRepository'
 import { InMemoryCommentModerationActionRepository } from '../../adapters/outbound/persistence/InMemoryCommentModerationActionRepository'
 import { PostgresCommentModerationActionRepository } from '../../adapters/outbound/persistence/PostgresCommentModerationActionRepository'
+import { InMemoryCommentImageAssetRepository } from '../../adapters/outbound/persistence/InMemoryCommentImageAssetRepository'
+import { PostgresCommentImageAssetRepository } from '../../adapters/outbound/persistence/PostgresCommentImageAssetRepository'
+import { InMemoryCommentImageStorageAdapter } from '../../adapters/outbound/storage/InMemoryCommentImageStorageAdapter'
+import { S3CommentImageStorageAdapter } from '../../adapters/outbound/storage/S3CommentImageStorageAdapter'
 import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
@@ -94,7 +109,13 @@ import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 
 import { createDatabase } from '../persistence/database'
 import { createLogger, type Logger } from '../observability/logger'
-import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
+import {
+  AuthMode,
+  CommentImageStorageDriver,
+  loadConfig,
+  PersistenceDriver,
+  type AppConfig,
+} from '../config/env'
 
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
@@ -122,6 +143,7 @@ export const LOGGER = Symbol('Logger')
     ProductCommentsController,
     CommentReportsController,
     CommentModerationController,
+    CommentImageAssetsController,
     HealthController,
   ],
   providers: [
@@ -271,6 +293,89 @@ export const LOGGER = Symbol('Logger')
         )
       },
       inject: [APP_CONFIG],
+    },
+    {
+      provide: COMMENT_IMAGE_ASSET_REPOSITORY,
+      useFactory: (config: AppConfig): CommentImageAssetRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Postgres) {
+          return new InMemoryCommentImageAssetRepository()
+        }
+
+        if (config.databaseUrl === null) {
+          throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
+        }
+
+        return new PostgresCommentImageAssetRepository(
+          createDatabase({ connectionString: config.databaseUrl }),
+        )
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      // EN-028 (Management#299): reutiliza el bucket que Catalog provisiono
+      // en EN-027.9. El rol del nodo compartido ya autoriza `assets/*` y
+      // `staging/*` completos; este adaptador solo anida sus claves bajo
+      // `.../comments/` para no cruzarse con las de Catalog.
+      provide: COMMENT_IMAGE_STORAGE,
+      useFactory: (config: AppConfig, logger: Logger): CommentImageStoragePort => {
+        if (
+          config.commentImageStorageDriver === CommentImageStorageDriver.S3 &&
+          config.commentImageBucketName !== null
+        ) {
+          logger.info('comment_image_storage', {
+            driver: 's3',
+            bucket: config.commentImageBucketName,
+          })
+          return new S3CommentImageStorageAdapter({
+            bucketName: config.commentImageBucketName,
+            region: config.commentImageRegion,
+          })
+        }
+        logger.info('comment_image_storage', { driver: 'memory' })
+        return new InMemoryCommentImageStorageAdapter()
+      },
+      inject: [APP_CONFIG, LOGGER],
+    },
+    {
+      provide: CREATE_COMMENT_IMAGE_UPLOAD_INTENT,
+      useFactory: (
+        storage: CommentImageStoragePort,
+        repository: CommentImageAssetRepositoryPort,
+        idGenerator: IdGeneratorPort,
+        clock: ClockPort,
+        config: AppConfig,
+      ): CreateCommentImageUploadIntent =>
+        new CreateCommentImageUploadIntent({
+          storage,
+          repository,
+          idGenerator,
+          clock,
+          apiBaseUrl: config.apiBaseUrl ?? '',
+        }),
+      inject: [
+        COMMENT_IMAGE_STORAGE,
+        COMMENT_IMAGE_ASSET_REPOSITORY,
+        ID_GENERATOR,
+        CLOCK,
+        APP_CONFIG,
+      ],
+    },
+    {
+      provide: FINALIZE_COMMENT_IMAGE_ASSET,
+      useFactory: (
+        storage: CommentImageStoragePort,
+        repository: CommentImageAssetRepositoryPort,
+        clock: ClockPort,
+      ): FinalizeCommentImageAsset => new FinalizeCommentImageAsset({ storage, repository, clock }),
+      inject: [COMMENT_IMAGE_STORAGE, COMMENT_IMAGE_ASSET_REPOSITORY, CLOCK],
+    },
+    {
+      provide: GET_COMMENT_IMAGE_CONTENT,
+      useFactory: (
+        storage: CommentImageStoragePort,
+        repository: CommentImageAssetRepositoryPort,
+      ): GetCommentImageContent => new GetCommentImageContent({ storage, repository }),
+      inject: [COMMENT_IMAGE_STORAGE, COMMENT_IMAGE_ASSET_REPOSITORY],
     },
     {
       provide: TOKEN_VERIFIER,

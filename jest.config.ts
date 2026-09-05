@@ -41,6 +41,7 @@ const config: Config = {
     '!src/adapters/outbound/persistence/PostgresProductReviewRepository.ts',
     '!src/adapters/outbound/persistence/PostgresCommentReportRepository.ts',
     '!src/adapters/outbound/persistence/PostgresCommentModerationActionRepository.ts',
+    '!src/adapters/outbound/persistence/PostgresCommentImageAssetRepository.ts',
     // Las migraciones solo se ejecutan de verdad contra un motor real: las
     // mide `jest.db.config.ts`, via `migrateToLatest`, no esta suite.
     '!src/adapters/outbound/persistence/migrations/**',
