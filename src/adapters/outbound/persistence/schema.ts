@@ -141,6 +141,22 @@ export interface CommentModerationActionsTable {
   readonly created_at: Date
 }
 
+/**
+ * Senales del filtro automatico de contenido (Management#29, HU-41.7).
+ *
+ * Sin clave foranea a `product_comments`, por la misma razon que
+ * `CommentReportsTable`: es evidencia y debe sobrevivir aunque el comentario
+ * senalado deje de estar disponible.
+ */
+export interface CommentModerationSignalsTable {
+  readonly id: string
+  readonly comment_id: string
+  readonly source: string
+  readonly rule_type: string
+  readonly rule_match: string
+  readonly detected_at: Date
+}
+
 export interface Database {
   readonly threads: ThreadsTable
   readonly posts: PostsTable
@@ -148,4 +164,5 @@ export interface Database {
   readonly product_reviews: ProductReviewsTable
   readonly comment_reports: CommentReportsTable
   readonly comment_moderation_actions: CommentModerationActionsTable
+  readonly comment_moderation_signals: CommentModerationSignalsTable
 }
