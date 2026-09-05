@@ -13,7 +13,8 @@ import * as migration002 from '../../adapters/outbound/persistence/migrations/00
 import * as migration003 from '../../adapters/outbound/persistence/migrations/003-product-comments-reviews'
 import * as migration004 from '../../adapters/outbound/persistence/migrations/004-comment-reports'
 import * as migration005 from '../../adapters/outbound/persistence/migrations/005-comment-moderation'
-import * as migration006 from '../../adapters/outbound/persistence/migrations/006-comment-moderation-action-ip'
+import * as migration006 from '../../adapters/outbound/persistence/migrations/006-comment-automatic-moderation-signals'
+import * as migration007 from '../../adapters/outbound/persistence/migrations/007-comment-moderation-action-ip'
 
 export interface DatabaseOptions {
   readonly connectionString: string
@@ -58,7 +59,8 @@ const migrations: MigrationProvider = {
       '003-product-comments-reviews': migration003,
       '004-comment-reports': migration004,
       '005-comment-moderation': migration005,
-      '006-comment-moderation-action-ip': migration006,
+      '006-comment-automatic-moderation-signals': migration006,
+      '007-comment-moderation-action-ip': migration007,
     }),
 }
 

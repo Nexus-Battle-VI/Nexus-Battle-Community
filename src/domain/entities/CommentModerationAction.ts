@@ -20,7 +20,7 @@ export interface CommentModerationActionSnapshot {
   /**
    * IP de origen (HU-41.8). `null` solo en registros historicos anteriores a
    * esta capacidad -la migracion los deja asi a proposito, ver
-   * `006-comment-moderation-action-ip.ts`-; toda accion NUEVA la resuelve
+   * `007-comment-moderation-action-ip.ts`-; toda accion NUEVA la resuelve
    * siempre desde el servidor.
    */
   readonly ipAddress: string | null

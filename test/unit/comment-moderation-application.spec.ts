@@ -11,7 +11,10 @@ import { InMemoryProductCommentRepository } from '../../src/adapters/outbound/pe
 import { InMemoryCommentModerationActionRepository } from '../../src/adapters/outbound/persistence/InMemoryCommentModerationActionRepository'
 import { InMemoryCommentReportRepository } from '../../src/adapters/outbound/persistence/InMemoryCommentReportRepository'
 import { InMemoryCommentModerationTransaction } from '../../src/adapters/outbound/persistence/InMemoryCommentModerationTransaction'
+import { InMemoryAutomaticModerationFlagRepository } from '../../src/adapters/outbound/persistence/InMemoryAutomaticModerationFlagRepository'
+import { InMemoryModerationQueueRepository } from '../../src/adapters/outbound/persistence/InMemoryModerationQueueRepository'
 import { ProductComment } from '../../src/domain/entities/ProductComment'
+import { AutomaticModerationFlag } from '../../src/domain/entities/AutomaticModerationFlag'
 import { CommentReport } from '../../src/domain/entities/CommentReport'
 import { AuthorId } from '../../src/domain/value-objects/community-values'
 import {
@@ -24,6 +27,11 @@ import {
   ReportCategory,
 } from '../../src/domain/value-objects/comment-report-values'
 import { CommentModerationStatus } from '../../src/domain/value-objects/moderation-values'
+import {
+  AutomaticModerationFlagId,
+  ModerationSignalMatch,
+  ModerationSignalRuleType,
+} from '../../src/domain/value-objects/moderation-signal-values'
 import { DomainError } from '../../src/domain/errors/DomainError'
 
 const FIXED_NOW = new Date('2026-09-03T10:00:00.000Z')
@@ -43,6 +51,7 @@ interface Harness {
   comments: InMemoryProductCommentRepository
   actions: InMemoryCommentModerationActionRepository
   reports: InMemoryCommentReportRepository
+  automaticFlags: InMemoryAutomaticModerationFlagRepository
   approve: ApproveComment
   hide: HideComment
   remove: DeleteComment
@@ -56,6 +65,7 @@ const buildHarness = (): Harness => {
   const comments = new InMemoryProductCommentRepository()
   const actions = new InMemoryCommentModerationActionRepository()
   const reports = new InMemoryCommentReportRepository()
+  const automaticFlags = new InMemoryAutomaticModerationFlagRepository()
   const clock = { now: (): Date => FIXED_NOW }
   const deps = {
     transaction: new InMemoryCommentModerationTransaction({ comments, actions }),
@@ -82,12 +92,16 @@ const buildHarness = (): Harness => {
     comments,
     actions,
     reports,
+    automaticFlags,
     approve: new ApproveComment(deps),
     hide: new HideComment(deps),
     remove: new DeleteComment(deps),
     edit: new EditComment(deps),
     mark: new MarkComment(deps),
-    listQueue: new ListModerationQueue({ reports, comments }),
+    listQueue: new ListModerationQueue({
+      queue: new InMemoryModerationQueueRepository(reports, automaticFlags),
+      comments,
+    }),
     seedComment,
   }
 }
@@ -323,6 +337,8 @@ describe('ListModerationQueue (HU-41.1)', () => {
     expect(page.items).toHaveLength(1)
     expect(page.items[0]?.comment.id).toBe(reportado)
     expect(page.items[0]?.reportCount).toBe(1)
+    expect(page.items[0]?.sources).toEqual(['USER_REPORT'])
+    expect(page.items[0]?.automaticFlagCount).toBe(0)
   })
 
   it('la cola esta vacia cuando ningun comentario tiene reportes', async () => {
@@ -342,5 +358,74 @@ describe('ListModerationQueue (HU-41.1)', () => {
 
     expect(page.limit).toBe(100)
     expect(page.offset).toBe(0)
+  })
+
+  /**
+   * HU-41.7 (Management#29): la cola tambien debe incorporar comentarios
+   * detectados por el filtro automatico, no solo los reportados por otro
+   * jugador.
+   */
+  it('devuelve un comentario detectado por el filtro automatico, con su origen', async () => {
+    const h = buildHarness()
+    const detectado = await h.seedComment('comment-detectado')
+
+    await h.automaticFlags.save(
+      AutomaticModerationFlag.detect({
+        id: AutomaticModerationFlagId.create('signal-1'),
+        commentId: ProductCommentId.create(detectado),
+        ruleType: ModerationSignalRuleType.ForbiddenTerm,
+        match: ModerationSignalMatch.create('forbidden-test-term'),
+        occurredAt: FIXED_NOW,
+      }),
+    )
+
+    const page = await h.listQueue.execute({})
+
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]?.comment.id).toBe(detectado)
+    expect(page.items[0]?.reportCount).toBe(0)
+    expect(page.items[0]?.automaticFlagCount).toBe(1)
+    expect(page.items[0]?.sources).toEqual(['AUTOMATIC_FILTER'])
+  })
+
+  it('un comentario reportado Y detectado aparece una sola vez, con ambos origenes', async () => {
+    const h = buildHarness()
+    const comentario = await h.seedComment('comment-ambos-origenes')
+
+    await h.reports.save(
+      CommentReport.file({
+        id: CommentReportId.create('report-ambos'),
+        commentId: ProductCommentId.create(comentario),
+        authorId: AuthorId.create('acc-reportante'),
+        category: ReportCategory.OffensiveContent,
+        description: null,
+        occurredAt: FIXED_NOW,
+      }),
+    )
+    await h.automaticFlags.save(
+      AutomaticModerationFlag.detect({
+        id: AutomaticModerationFlagId.create('signal-ambos'),
+        commentId: ProductCommentId.create(comentario),
+        ruleType: ModerationSignalRuleType.ForbiddenTerm,
+        match: ModerationSignalMatch.create('forbidden-test-term'),
+        occurredAt: FIXED_NOW,
+      }),
+    )
+
+    const page = await h.listQueue.execute({})
+
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]?.reportCount).toBe(1)
+    expect(page.items[0]?.automaticFlagCount).toBe(1)
+    expect(page.items[0]?.sources).toEqual(['USER_REPORT', 'AUTOMATIC_FILTER'])
+  })
+
+  it('un comentario sin reporte ni senal no aparece en la cola', async () => {
+    const h = buildHarness()
+    await h.seedComment('comment-limpio')
+
+    const page = await h.listQueue.execute({})
+
+    expect(page.items).toEqual([])
   })
 })

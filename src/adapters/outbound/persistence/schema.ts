@@ -141,11 +141,27 @@ export interface CommentModerationActionsTable {
   readonly created_at: Date
 
   /**
-   * IP de origen (HU-41.8, migracion 006). `NULL` solo en filas anteriores a
+   * IP de origen (HU-41.8, migracion 007). `NULL` solo en filas anteriores a
    * esa migracion -compatibilidad hacia atras-; toda fila nueva la resuelve
    * siempre desde el servidor, nunca del cuerpo de la peticion.
    */
   readonly ip_address: string | null
+}
+
+/**
+ * Senales del filtro automatico de contenido (Management#29, HU-41.7).
+ *
+ * Sin clave foranea a `product_comments`, por la misma razon que
+ * `CommentReportsTable`: es evidencia y debe sobrevivir aunque el comentario
+ * senalado deje de estar disponible.
+ */
+export interface CommentModerationSignalsTable {
+  readonly id: string
+  readonly comment_id: string
+  readonly source: string
+  readonly rule_type: string
+  readonly rule_match: string
+  readonly detected_at: Date
 }
 
 export interface Database {
@@ -155,4 +171,5 @@ export interface Database {
   readonly product_reviews: ProductReviewsTable
   readonly comment_reports: CommentReportsTable
   readonly comment_moderation_actions: CommentModerationActionsTable
+  readonly comment_moderation_signals: CommentModerationSignalsTable
 }
