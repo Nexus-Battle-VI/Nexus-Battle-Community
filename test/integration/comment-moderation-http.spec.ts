@@ -233,5 +233,28 @@ describe('API de moderacion de comentarios (HU-41)', () => {
 
       expect(editado?.content).toBe('Comentario editado por moderacion.')
     })
+
+    /**
+     * HU-41.9 (Management#29): "eliminar" es borrado FISICO -el PDF fuente
+     * exige "remover permanentemente el comentario del sistema"-, no logico.
+     * La respuesta del endpoint sigue devolviendo `DELETED` (contrato HTTP
+     * sin cambios), pero una lectura posterior ya no debe encontrar la fila.
+     */
+    it('el comentario eliminado no reaparece en una lectura posterior (borrado fisico)', async () => {
+      const commentId = await publishComment('Comentario que sera eliminado permanentemente.')
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/comments/${commentId}/deletion`)
+        .set('Authorization', bearer('token-moderador'))
+        .send({ reason: 'Infringe los terminos de uso.' })
+
+      expect(response.status).toBe(200)
+      expect(response.body.moderationStatus).toBe('DELETED')
+
+      const lista = await request(app.getHttpServer()).get(`/api/products/${PRODUCTO}/comments`)
+      const eliminado = (lista.body.items as { id: string }[]).find((item) => item.id === commentId)
+
+      expect(eliminado).toBeUndefined()
+    })
   })
 })

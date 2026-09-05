@@ -38,6 +38,12 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
     )
   }
 
+  deleteById(commentId: ProductCommentId): Promise<void> {
+    this.byId.delete(commentId.value)
+
+    return Promise.resolve()
+  }
+
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage> {
     const all = [...this.byId.values()]
       .filter((snapshot) => snapshot.productId === productId.value)

@@ -137,7 +137,13 @@ describe('Acciones de moderacion (HU-41.2)', () => {
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Hidden)
   })
 
-  it('eliminar (borrado logico) mueve PENDING -> DELETED sin borrar la fila', async () => {
+  /**
+   * HU-41.9 (Management#29): el PDF fuente exige borrado FISICO
+   * ("remover permanentemente el comentario del sistema"), no logico. La
+   * respuesta sigue devolviendo el estado final `DELETED` -el contrato HTTP
+   * no cambia- aunque la fila ya no exista.
+   */
+  it('eliminar borra FISICAMENTE la fila, devolviendo igualmente el estado final DELETED', async () => {
     const h = buildHarness()
     const commentId = await h.seedComment()
 
@@ -149,7 +155,54 @@ describe('Acciones de moderacion (HU-41.2)', () => {
     })
 
     expect(dto.moderationStatus).toBe(CommentModerationStatus.Deleted)
-    expect(await h.comments.findById(ProductCommentId.create(commentId))).not.toBeNull()
+    expect(await h.comments.findById(ProductCommentId.create(commentId))).toBeNull()
+  })
+
+  it('eliminar conserva la auditoria y no reaparece en una lectura posterior', async () => {
+    const h = buildHarness()
+    const commentId = await h.seedComment()
+
+    await h.remove.execute({
+      commentId,
+      actorId: 'acc-moderador',
+      reason: 'Infringe los terminos de uso.',
+      ipAddress: IP,
+    })
+
+    const history = await h.actions.listByComment(ProductCommentId.create(commentId))
+    expect(history).toHaveLength(1)
+    expect(history[0]?.toSnapshot()).toMatchObject({
+      action: 'DELETE',
+      previousStatus: 'PENDING',
+      newStatus: 'DELETED',
+    })
+
+    expect(await h.comments.findById(ProductCommentId.create(commentId))).toBeNull()
+  })
+
+  it('eliminar conserva los reportes existentes del comentario', async () => {
+    const h = buildHarness()
+    const commentId = await h.seedComment()
+
+    await h.reports.save(
+      CommentReport.file({
+        id: CommentReportId.create('report-previo-a-eliminar'),
+        commentId: ProductCommentId.create(commentId),
+        authorId: AuthorId.create('acc-reportante'),
+        category: ReportCategory.Spam,
+        description: null,
+        occurredAt: FIXED_NOW,
+      }),
+    )
+
+    await h.remove.execute({
+      commentId,
+      actorId: 'acc-moderador',
+      reason: 'Infringe los terminos de uso.',
+      ipAddress: IP,
+    })
+
+    expect(h.reports.size).toBe(1)
   })
 
   it('editar cambia el contenido y mueve PENDING -> EDITED', async () => {
@@ -427,5 +480,41 @@ describe('ListModerationQueue (HU-41.1)', () => {
     const page = await h.listQueue.execute({})
 
     expect(page.items).toEqual([])
+  })
+
+  /**
+   * HU-41.9 (Management#29): tras el borrado FISICO de un comentario, sus
+   * reportes/senales siguen siendo evidencia historica valida en sus propias
+   * tablas, pero el comentario ya no existe. La cola no debe fallar por eso
+   * -se omite esa entrada, como ya hacia para cualquier otra inconsistencia
+   * de datos-.
+   */
+  it('un comentario reportado y luego eliminado fisicamente no rompe la consulta de la cola', async () => {
+    const h = buildHarness()
+    const commentId = await h.seedComment('comment-sera-eliminado')
+
+    await h.reports.save(
+      CommentReport.file({
+        id: CommentReportId.create('report-de-eliminado'),
+        commentId: ProductCommentId.create(commentId),
+        authorId: AuthorId.create('acc-reportante'),
+        category: ReportCategory.Spam,
+        description: null,
+        occurredAt: FIXED_NOW,
+      }),
+    )
+
+    await h.remove.execute({
+      commentId,
+      actorId: 'acc-moderador',
+      reason: 'Infringe los terminos de uso.',
+      ipAddress: IP,
+    })
+
+    const page = await h.listQueue.execute({})
+
+    expect(page.items).toEqual([])
+    // El reporte sigue existiendo como evidencia, aunque ya no aparezca en cola.
+    expect(h.reports.size).toBe(1)
   })
 })

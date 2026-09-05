@@ -122,16 +122,20 @@ export class CommentModerationController {
   }
 
   /**
-   * Borrado LOGICO por moderacion: el comentario pasa a `DELETED`, la fila
-   * permanece como evidencia de la accion (HU-41.3). Es `POST .../deletion`,
-   * no `DELETE`, por el mismo motivo que `ThreadsController` usa
+   * Borrado FISICO por moderacion (HU-41.9, Management#29): la fila de
+   * `product_comments` se elimina permanentemente, tal y como exige el PDF
+   * fuente (7.3.3). El contrato HTTP no cambia respecto al borrado logico
+   * anterior -sigue devolviendo `ProductCommentResponse` con
+   * `moderationStatus: DELETED`, tomado de la instantanea final antes de
+   * borrar, no de una relectura de la fila-. Es `POST .../deletion`, no
+   * `DELETE`, por el mismo motivo que `ThreadsController` usa
    * `POST .../hiding` y `POST .../closure`: la accion exige un motivo en el
    * cuerpo, y las convenciones de este servicio expresan una accion de
    * moderacion como un sub-recurso, no como el verbo HTTP crudo.
    */
   @Post(':commentId/deletion')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Elimina (logicamente) un comentario por moderacion (HU-41.2)' })
+  @ApiOperation({ summary: 'Elimina permanentemente un comentario por moderacion (HU-41.9)' })
   @ApiResponse({ status: 200, type: ProductCommentResponse })
   @ApiResponse({ status: 400, description: 'Motivo invalido' })
   @ApiResponse({ status: 404, description: 'El comentario no existe' })

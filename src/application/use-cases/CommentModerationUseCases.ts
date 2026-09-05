@@ -38,16 +38,26 @@ export interface EditCommentCommand extends ModerateCommentCommand {
 }
 
 /**
- * Aplica una accion de moderacion y registra su auditoria (HU-41.2/41.3/41.8).
+ * Aplica una accion de moderacion y registra su auditoria
+ * (HU-41.2/41.3/41.8/41.9).
  *
  * Comun a las cinco acciones: resuelve el comentario (404 si no existe),
- * aplica la transicion en el agregado, y PERSISTE el comentario y el
- * registro de auditoria dentro de la MISMA transaccion (HU-41.8): si
- * cualquiera de las dos escrituras falla, ninguna de las dos queda hecha -ni
- * el comentario actualizado sin su auditoria, ni la auditoria sin que el
- * comentario refleje el nuevo estado-. Si la accion se rechaza antes de
- * entrar a la transaccion (comentario inexistente, motivo invalido,
- * contenido invalido en `edit`), no se escribe nada.
+ * aplica la transicion en el agregado, y PERSISTE el efecto sobre el
+ * comentario y el registro de auditoria dentro de la MISMA transaccion
+ * (HU-41.8): si cualquiera de las dos escrituras falla, ninguna de las dos
+ * queda hecha. Si la accion se rechaza antes de entrar a la transaccion
+ * (comentario inexistente, motivo invalido, contenido invalido en `edit`),
+ * no se escribe nada.
+ *
+ * `DELETE` es la unica accion que no termina en `comments.save()`: HU-41.9
+ * (Management#29) exige eliminacion FISICA -"remover permanentemente el
+ * comentario del sistema", PDF fuente 7.3.3-, no el borrado logico que
+ * tenia antes. El registro de auditoria se construye ANTES de borrar,
+ * tomando la instantanea final (`comment.toSnapshot()`, con
+ * `moderationStatus: DELETED`) de la instancia en memoria -nunca releida de
+ * la fila, que para entonces ya no existe-, de modo que el contrato HTTP no
+ * cambia: la respuesta sigue siendo el mismo `ProductCommentDto`, con el
+ * mismo estado final que ya devolvia el borrado logico.
  */
 const applyModeration = async (
   deps: ModerateCommentDependencies,
@@ -68,6 +78,7 @@ const applyModeration = async (
     }
 
     const { previousStatus, newStatus } = comment.moderate({ action, newContent })
+    const finalSnapshot = comment.toSnapshot()
 
     const record = CommentModerationAction.record({
       id: CommentModerationActionId.create(deps.ids.generate()),
@@ -81,10 +92,15 @@ const applyModeration = async (
       ipAddress,
     })
 
-    await comments.save(comment)
+    if (action === ModerationAction.Delete) {
+      await comments.deleteById(commentId)
+    } else {
+      await comments.save(comment)
+    }
+
     await actions.save(record)
 
-    return toProductCommentDto(comment.toSnapshot())
+    return toProductCommentDto(finalSnapshot)
   })
 }
 
@@ -105,10 +121,13 @@ export class HideComment {
 }
 
 /**
- * Eliminacion POR MODERACION. Es un borrado logico -el comentario pasa a
- * `DELETED`, la fila permanece- no fisico: eliminar la fila borraria junto
- * con ella la evidencia que la propia HU-41 exige conservar (estado anterior,
- * quien actuo, por que).
+ * Eliminacion POR MODERACION (HU-41.9, Management#29): borrado FISICO de
+ * `product_comments`, tal y como exige el PDF fuente (7.3.3, "remover
+ * permanentemente el comentario del sistema"). La evidencia -a quien se
+ * elimino, quien lo hizo, cuando, por que- no vive en la fila del
+ * comentario sino en `CommentModerationAction`, que no tiene clave foranea
+ * hacia `product_comments` precisamente para poder sobrevivir a este
+ * borrado; `CommentReport` tampoco se toca.
  */
 export class DeleteComment {
   constructor(private readonly deps: ModerateCommentDependencies) {}
@@ -147,10 +166,12 @@ export class MarkComment {
  * contenido (HU-41.7). Un comentario con ambos origenes aparece UNA sola vez
  * -la agregacion por `commentId` vive en el repositorio, no aqui-.
  *
- * Un comentario en cola que ya no existe (por ejemplo, si en el futuro se
- * permitiera un borrado fisico fuera de moderacion) se omite del resultado en
- * lugar de fallar toda la pagina: es una inconsistencia de datos, no un
- * motivo para negarle la cola entera al moderador.
+ * Un comentario en cola que ya no existe -desde HU-41.9, el caso real es un
+ * comentario reportado o senalado que despues se elimino fisicamente por
+ * moderacion- se omite del resultado en lugar de fallar toda la pagina: el
+ * reporte o la senal siguen siendo evidencia historica valida, y su
+ * comentario ya no estar disponible no es motivo para negarle la cola
+ * entera al moderador.
  */
 const DEFAULT_QUEUE_LIMIT = 20
 const MAX_QUEUE_LIMIT = 100
