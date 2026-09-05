@@ -63,6 +63,16 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
     return row === undefined ? null : PostgresProductCommentRepository.hydrate(row)
   }
 
+  /**
+   * Borrado FISICO (HU-41.9). Sin `on delete cascade` que temer: ni
+   * `comment_reports` ni `comment_moderation_actions`/`comment_moderation_signals`
+   * tienen clave foranea hacia `product_comments` -son evidencia y sobreviven
+   * a este borrado a proposito-.
+   */
+  async deleteById(commentId: ProductCommentId): Promise<void> {
+    await this.db.deleteFrom('product_comments').where('id', '=', commentId.value).execute()
+  }
+
   async listByProduct(
     productId: ProductId,
     page: ListProductCommentsPage,
