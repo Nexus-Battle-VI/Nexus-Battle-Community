@@ -38,6 +38,12 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
     )
   }
 
+  deleteById(commentId: ProductCommentId): Promise<void> {
+    this.byId.delete(commentId.value)
+
+    return Promise.resolve()
+  }
+
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage> {
     const all = [...this.byId.values()]
       .filter((snapshot) => snapshot.productId === productId.value)
@@ -67,6 +73,7 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
       content: CommentContent.create(snapshot.content),
       images: snapshot.images.map((image) => ImageReference.create(image)),
       createdAt: new Date(snapshot.createdAt),
+      moderationStatus: snapshot.moderationStatus,
     })
   }
 }

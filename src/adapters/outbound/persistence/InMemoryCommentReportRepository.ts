@@ -20,6 +20,11 @@ export class InMemoryCommentReportRepository implements CommentReportRepositoryP
     return Promise.resolve(count)
   }
 
+  /** Enumeracion completa, para que `InMemoryModerationQueueRepository` agregue por comentario. */
+  listAll(): readonly CommentReportSnapshot[] {
+    return [...this.byId.values()]
+  }
+
   get size(): number {
     return this.byId.size
   }
