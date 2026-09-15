@@ -9,6 +9,10 @@ import type { AuthorId } from '../../domain/value-objects/community-values'
  * ventana de tiempo, no el total historico -- un limite sin ventana
  * terminaria bloqueando para siempre a cualquier jugador activo, que no es
  * "prevenir abuso" sino inutilizar el mecanismo.
+ *
+ * La cola de moderacion (HU-41.1) YA NO se lee a traves de este puerto desde
+ * HU-41.7: `ModerationQueueRepositoryPort` combina reportes y detecciones
+ * automaticas, y este puerto sigue ocupandose exclusivamente de reportes.
  */
 export interface CommentReportRepositoryPort {
   save(report: CommentReport): Promise<void>

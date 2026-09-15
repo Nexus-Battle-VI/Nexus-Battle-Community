@@ -3,6 +3,17 @@ import type { PostSnapshot, ThreadSnapshot } from '../../../domain/entities/Thre
 import type { ProductCommentSnapshot } from '../../../domain/entities/ProductComment'
 import type { ProductReviewSnapshot } from '../../../domain/entities/ProductReview'
 import type { CommentReportSnapshot } from '../../../domain/entities/CommentReport'
+import type { CommentModerationActionSnapshot } from '../../../domain/entities/CommentModerationAction'
+import type { AutomaticModerationFlagSnapshot } from '../../../domain/entities/AutomaticModerationFlag'
+import {
+  isCommentModerationStatus,
+  isModerationAction,
+  type CommentModerationStatus,
+} from '../../../domain/value-objects/moderation-values'
+import {
+  isModerationSignalRuleType,
+  isModerationSignalSource,
+} from '../../../domain/value-objects/moderation-signal-values'
 
 /**
  * Traduccion entre filas de PostgreSQL y la instantanea del agregado.
@@ -118,16 +129,26 @@ export interface ProductCommentRow {
   readonly content: string
   readonly images: string[]
   readonly created_at: Date
+  readonly moderation_status: string
 }
 
-export const toProductCommentSnapshot = (row: ProductCommentRow): ProductCommentSnapshot => ({
-  id: row.id,
-  productId: row.product_id,
-  authorId: row.author_id,
-  content: row.content,
-  images: row.images,
-  createdAt: row.created_at.toISOString(),
-})
+export const toProductCommentSnapshot = (row: ProductCommentRow): ProductCommentSnapshot => {
+  if (!isCommentModerationStatus(row.moderation_status)) {
+    throw new PersistenceMappingError(
+      `El comentario ${row.id} tiene un estado de moderacion desconocido: "${row.moderation_status}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    productId: row.product_id,
+    authorId: row.author_id,
+    content: row.content,
+    images: row.images,
+    createdAt: row.created_at.toISOString(),
+    moderationStatus: row.moderation_status,
+  }
+}
 
 export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCommentRow => {
   const createdAt = new Date(snapshot.createdAt)
@@ -145,6 +166,79 @@ export const toProductCommentRow = (snapshot: ProductCommentSnapshot): ProductCo
     content: snapshot.content,
     images: [...snapshot.images],
     created_at: createdAt,
+    moderation_status: snapshot.moderationStatus,
+  }
+}
+
+export interface CommentModerationActionRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly actor_id: string
+  readonly action: string
+  readonly reason: string
+  readonly previous_status: string
+  readonly new_status: string
+  readonly created_at: Date
+  readonly ip_address: string | null
+}
+
+const asModerationStatus = (
+  value: string,
+  contextId: string,
+  field: string,
+): CommentModerationStatus => {
+  if (!isCommentModerationStatus(value)) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${contextId} tiene un ${field} desconocido: "${value}".`,
+    )
+  }
+
+  return value
+}
+
+export const toCommentModerationActionSnapshot = (
+  row: CommentModerationActionRow,
+): CommentModerationActionSnapshot => {
+  if (!isModerationAction(row.action)) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${row.id} tiene una accion desconocida: "${row.action}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    actorId: row.actor_id,
+    action: row.action,
+    reason: row.reason,
+    previousStatus: asModerationStatus(row.previous_status, row.id, 'estado anterior'),
+    newStatus: asModerationStatus(row.new_status, row.id, 'estado nuevo'),
+    createdAt: row.created_at.toISOString(),
+    ipAddress: row.ip_address,
+  }
+}
+
+export const toCommentModerationActionRow = (
+  snapshot: CommentModerationActionSnapshot,
+): CommentModerationActionRow => {
+  const createdAt = new Date(snapshot.createdAt)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    throw new PersistenceMappingError(
+      `La accion de moderacion ${snapshot.id} tiene una fecha invalida: "${snapshot.createdAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    actor_id: snapshot.actorId,
+    action: snapshot.action,
+    reason: snapshot.reason,
+    previous_status: snapshot.previousStatus,
+    new_status: snapshot.newStatus,
+    created_at: createdAt,
+    ip_address: snapshot.ipAddress,
   }
 }
 
@@ -207,5 +301,60 @@ export const toProductReviewRow = (snapshot: ProductReviewSnapshot): ProductRevi
     author_id: snapshot.authorId,
     rating: snapshot.rating,
     created_at: createdAt,
+  }
+}
+
+export interface AutomaticModerationFlagRow {
+  readonly id: string
+  readonly comment_id: string
+  readonly source: string
+  readonly rule_type: string
+  readonly rule_match: string
+  readonly detected_at: Date
+}
+
+export const toAutomaticModerationFlagSnapshot = (
+  row: AutomaticModerationFlagRow,
+): AutomaticModerationFlagSnapshot => {
+  if (!isModerationSignalSource(row.source)) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${row.id} tiene un origen desconocido: "${row.source}".`,
+    )
+  }
+
+  if (!isModerationSignalRuleType(row.rule_type)) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${row.id} tiene un tipo de regla desconocido: "${row.rule_type}".`,
+    )
+  }
+
+  return {
+    id: row.id,
+    commentId: row.comment_id,
+    source: row.source,
+    ruleType: row.rule_type,
+    match: row.rule_match,
+    detectedAt: row.detected_at.toISOString(),
+  }
+}
+
+export const toAutomaticModerationFlagRow = (
+  snapshot: AutomaticModerationFlagSnapshot,
+): AutomaticModerationFlagRow => {
+  const detectedAt = new Date(snapshot.detectedAt)
+
+  if (Number.isNaN(detectedAt.getTime())) {
+    throw new PersistenceMappingError(
+      `La senal de moderacion ${snapshot.id} tiene una fecha invalida: "${snapshot.detectedAt}".`,
+    )
+  }
+
+  return {
+    id: snapshot.id,
+    comment_id: snapshot.commentId,
+    source: snapshot.source,
+    rule_type: snapshot.ruleType,
+    rule_match: snapshot.match,
+    detected_at: detectedAt,
   }
 }

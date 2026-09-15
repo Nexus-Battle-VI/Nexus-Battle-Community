@@ -24,6 +24,16 @@ export interface ProductCommentRepositoryPort {
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage>
   /** Lo consume HU-46: un reporte debe poder confirmar que el comentario existe. */
   findById(commentId: ProductCommentId): Promise<ProductComment | null>
+  /**
+   * Elimina FISICAMENTE la fila (HU-41.9, Management#29): el PDF fuente
+   * (7.3.3) exige "remover permanentemente el comentario del sistema" para
+   * la accion de moderacion `DELETE`, a diferencia de las otras cuatro
+   * acciones -aprobar/ocultar/editar/marcar-, que siguen siendo
+   * actualizaciones logicas via `save`. No borra `comment_reports` ni
+   * `comment_moderation_actions`: esa evidencia es responsabilidad de sus
+   * propios repositorios y debe sobrevivir a este borrado.
+   */
+  deleteById(commentId: ProductCommentId): Promise<void>
 }
 
 export const PRODUCT_COMMENT_REPOSITORY = Symbol('ProductCommentRepositoryPort')

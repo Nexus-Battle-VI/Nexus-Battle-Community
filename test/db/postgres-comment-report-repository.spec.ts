@@ -137,6 +137,10 @@ describe('PostgresCommentReportRepository', () => {
     })
   })
 
+  // La lectura combinada de la cola de moderacion (reportes + filtro
+  // automatico, HU-41.7) se prueba en `postgres-moderation-queue-repository.spec.ts`:
+  // desde ese cambio ya no es responsabilidad de este repositorio.
+
   it('la migracion es idempotente: volver a aplicarla no cambia nada', async () => {
     const { applied, error } = await migrateToLatest(db)
 
