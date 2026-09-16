@@ -115,6 +115,7 @@ import type { Kysely } from 'kysely'
 
 import { createDatabase } from '../persistence/database'
 import type { Database } from '../../adapters/outbound/persistence/schema'
+import { describeError } from '../observability/describe-error'
 import { createLogger, type Logger } from '../observability/logger'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 
@@ -139,6 +140,22 @@ export const LOGGER = Symbol('Logger')
  * `createDatabase`.
  */
 export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
+
+/**
+ * Abre un pool de PostgreSQL que INFORMA, en lugar de terminar el proceso,
+ * cuando el motor corta una de sus conexiones ociosas (ver `onIdleError`).
+ *
+ * Este modulo abre varios pools; pasar por aqui es lo que garantiza que
+ * ninguno quede sin registro. `createDatabase` ya impide la caida por si solo:
+ * lo que se perderia al saltarse esta funcion es la traza del corte.
+ */
+const openDatabase = (databaseUrl: string, logger: Logger): Kysely<Database> =>
+  createDatabase({
+    connectionString: databaseUrl,
+    onIdleError: (error) => {
+      logger.warn('postgres_idle_connection_error', { detail: describeError(error) })
+    },
+  })
 
 /**
  * Raiz de composicion.
@@ -194,9 +211,7 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
         // El esquema NO se migra aqui. Migrar al arrancar hace que varias
         // replicas migren a la vez y que una migracion rota deje el servicio en
         // bucle de reinicio. Es un paso explicito: `npm run migrate`.
-        return new PostgresThreadRepository(
-          createDatabase({ connectionString: config.databaseUrl }),
-        )
+        return new PostgresThreadRepository(openDatabase(config.databaseUrl, logger))
       },
       inject: [APP_CONFIG, LOGGER],
     },
@@ -208,11 +223,11 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
       // comparten para poder abrir transacciones reales entre ellos
       // (HU-41.7, HU-41.8).
       provide: COMMENT_MODERATION_DATABASE,
-      useFactory: (config: AppConfig): Kysely<Database> | null =>
+      useFactory: (config: AppConfig, logger: Logger): Kysely<Database> | null =>
         config.persistenceDriver === PersistenceDriver.Postgres && config.databaseUrl !== null
-          ? createDatabase({ connectionString: config.databaseUrl })
+          ? openDatabase(config.databaseUrl, logger)
           : null,
-      inject: [APP_CONFIG],
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       // Comparte driver con THREAD_REPOSITORY: si el servicio corre sobre
@@ -322,7 +337,7 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
     },
     {
       provide: PRODUCT_REVIEW_REPOSITORY,
-      useFactory: (config: AppConfig): ProductReviewRepositoryPort => {
+      useFactory: (config: AppConfig, logger: Logger): ProductReviewRepositoryPort => {
         if (config.persistenceDriver !== PersistenceDriver.Postgres) {
           return new InMemoryProductReviewRepository()
         }
@@ -331,11 +346,9 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
           throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
         }
 
-        return new PostgresProductReviewRepository(
-          createDatabase({ connectionString: config.databaseUrl }),
-        )
+        return new PostgresProductReviewRepository(openDatabase(config.databaseUrl, logger))
       },
-      inject: [APP_CONFIG],
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       // Catalogo local, mismo patron que `LocalCatalogPricing` en Commerce.
@@ -374,7 +387,7 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
     },
     {
       provide: COMMENT_REPORT_REPOSITORY,
-      useFactory: (config: AppConfig): CommentReportRepositoryPort => {
+      useFactory: (config: AppConfig, logger: Logger): CommentReportRepositoryPort => {
         if (config.persistenceDriver !== PersistenceDriver.Postgres) {
           return new InMemoryCommentReportRepository()
         }
@@ -383,11 +396,9 @@ export const COMMENT_MODERATION_DATABASE = Symbol('CommentModerationDatabase')
           throw new Error('DATABASE_URL es obligatorio con PERSISTENCE_DRIVER=postgres.')
         }
 
-        return new PostgresCommentReportRepository(
-          createDatabase({ connectionString: config.databaseUrl }),
-        )
+        return new PostgresCommentReportRepository(openDatabase(config.databaseUrl, logger))
       },
-      inject: [APP_CONFIG],
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       provide: COMMENT_MODERATION_ACTION_REPOSITORY,
