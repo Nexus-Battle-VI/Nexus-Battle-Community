@@ -63,6 +63,13 @@ export interface AppConfig {
   readonly internalServiceName: string
   readonly internalTimeoutMs: number
   /**
+   * Contrato de lectura publica de Catalog para comprobar existencia de
+   * producto (`HttpProductCatalog`), distinto de `catalogInternalUrl` -ese es
+   * el contrato interno autenticado de empuje de calificaciones-. `null` sin
+   * configurar: se usa `LocalProductCatalog` (desarrollo local/demo).
+   */
+  readonly catalog: { readonly baseUrl: string; readonly timeoutMs: number } | null
+  /**
    * Filtro automatico de contenido (Management#29, HU-41.7): "deteccion
    * automatica de palabras prohibidas o patrones sospechosos" (PDF fuente,
    * 7.3.3). Sin vocabulario reutilizable en el org, la fuente es
@@ -224,6 +231,7 @@ export const loadConfig = (env: RawEnv): AppConfig => {
 
   const catalogInternalUrl = readString(env, 'CATALOG_INTERNAL_URL', '')
   const internalServiceAuthSecret = readString(env, 'INTERNAL_SERVICE_AUTH_SECRET', '')
+  const catalogBaseUrl = readString(env, 'CATALOG_BASE_URL', '')
 
   const cognitoUserPoolId = readString(env, 'COGNITO_USER_POOL_ID', '')
   const cognitoClientId = readString(env, 'COGNITO_CLIENT_ID', '')
@@ -260,6 +268,13 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     internalServiceAuthSecret: internalServiceAuthSecret === '' ? null : internalServiceAuthSecret,
     internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'community'),
     internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 2_000, 100, 30_000),
+    catalog:
+      catalogBaseUrl === ''
+        ? null
+        : {
+            baseUrl: catalogBaseUrl.replace(/\/+$/, ''),
+            timeoutMs: readInteger(env, 'CATALOG_TIMEOUT_MS', 2_000, 1, 60_000),
+          },
     commentModerationForbiddenTerms: readList(env, 'COMMENT_MODERATION_FORBIDDEN_TERMS').map(
       (term) => term.toLowerCase(),
     ),
