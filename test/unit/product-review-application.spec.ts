@@ -18,6 +18,8 @@ import { InMemoryProductReviewRepository } from '../../src/adapters/outbound/per
 import { InMemoryAutomaticModerationFlagRepository } from '../../src/adapters/outbound/persistence/InMemoryAutomaticModerationFlagRepository'
 import { InMemoryCommentPublicationTransaction } from '../../src/adapters/outbound/persistence/InMemoryCommentPublicationTransaction'
 import { DomainError } from '../../src/domain/errors/DomainError'
+import { ModerationAction } from '../../src/domain/value-objects/moderation-values'
+import { ProductCommentId } from '../../src/domain/value-objects/product-review-values'
 
 /** Sin terminos ni patrones: estas pruebas no ejercitan HU-41.7. */
 const inertModerationPolicy: CommentContentModerationPolicyPort = {
@@ -213,6 +215,29 @@ describe('ListProductComments', () => {
       limit: 20,
       offset: 0,
     })
+  })
+
+  it('no incluye un comentario OCULTO por moderacion: el listado es publico', async () => {
+    const harness = buildHarness()
+    const visible = await harness.publish.execute({
+      productId: PRODUCTO,
+      authorId: 'acc-1',
+      content: 'Comentario visible',
+    })
+    const hidden = await harness.publish.execute({
+      productId: PRODUCTO,
+      authorId: 'acc-2',
+      content: 'Comentario que se va a ocultar',
+    })
+
+    const comment = await harness.comments.findById(ProductCommentId.create(hidden.id))
+    comment?.moderate({ action: ModerationAction.Hide })
+    await harness.comments.save(comment!)
+
+    const page = await harness.list.execute({ productId: PRODUCTO })
+
+    expect(page.total).toBe(1)
+    expect(page.items.map((item) => item.id)).toEqual([visible.id])
   })
 })
 
