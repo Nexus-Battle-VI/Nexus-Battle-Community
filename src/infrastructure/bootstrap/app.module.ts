@@ -107,6 +107,7 @@ import {
   LocalProductCatalog,
   DEMO_PRODUCT_IDS,
 } from '../../adapters/outbound/existence/LocalProductCatalog'
+import { HttpProductCatalog } from '../../adapters/outbound/existence/HttpProductCatalog'
 import { HttpCatalogRatingClient } from '../../adapters/outbound/catalog/HttpCatalogRatingClient'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
@@ -351,11 +352,27 @@ const openDatabase = (databaseUrl: string, logger: Logger): Kysely<Database> =>
       inject: [APP_CONFIG, LOGGER],
     },
     {
-      // Catalogo local, mismo patron que `LocalCatalogPricing` en Commerce.
-      // Ver ProductExistencePort para la brecha de identificador que justifica
-      // no llamar en vivo a Nexus-Battle-Catalog todavia.
+      // Sin CATALOG_BASE_URL: catalogo local, mismo patron que
+      // `LocalCatalogPricing` en Commerce (desarrollo local/demo). Con ella:
+      // el contrato publico real de Catalog (ver ProductExistencePort).
       provide: PRODUCT_EXISTENCE,
-      useFactory: (): ProductExistencePort => new LocalProductCatalog(DEMO_PRODUCT_IDS),
+      useFactory: (config: AppConfig, logger: Logger): ProductExistencePort => {
+        if (config.catalog === null) {
+          logger.warn('product_existence_local', {
+            detail: 'CATALOG_BASE_URL sin configurar: solo existen los productos demo.',
+          })
+
+          return new LocalProductCatalog(DEMO_PRODUCT_IDS)
+        }
+
+        logger.info('product_existence_http', { baseUrl: config.catalog.baseUrl })
+
+        return new HttpProductCatalog({
+          baseUrl: config.catalog.baseUrl,
+          timeoutMs: config.catalog.timeoutMs,
+        })
+      },
+      inject: [APP_CONFIG, LOGGER],
     },
     {
       // Sin CATALOG_INTERNAL_URL/INTERNAL_SERVICE_AUTH_SECRET, un publicador

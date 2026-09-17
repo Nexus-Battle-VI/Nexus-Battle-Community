@@ -44,9 +44,17 @@ export class InMemoryProductCommentRepository implements ProductCommentRepositor
     return Promise.resolve()
   }
 
+  /**
+   * Excluye `HIDDEN`, igual que `PostgresProductCommentRepository`: es el
+   * listado PUBLICO, y ocultar por moderacion debe dejar de mostrar el
+   * contenido de verdad, no solo cambiarle la etiqueta.
+   */
   listByProduct(productId: ProductId, page: ListProductCommentsPage): Promise<ProductCommentPage> {
     const all = [...this.byId.values()]
-      .filter((snapshot) => snapshot.productId === productId.value)
+      .filter(
+        (snapshot) =>
+          snapshot.productId === productId.value && snapshot.moderationStatus !== 'HIDDEN',
+      )
       // Mas recientes primero; el id desempata cuando el reloj de pruebas es fijo.
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
 
