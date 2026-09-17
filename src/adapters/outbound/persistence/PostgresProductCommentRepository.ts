@@ -73,6 +73,12 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
     await this.db.deleteFrom('product_comments').where('id', '=', commentId.value).execute()
   }
 
+  /**
+   * Excluye `HIDDEN`: es el listado PUBLICO (`@Public()` en el controlador), y
+   * ocultar un comentario por moderacion (HU-41.2) no tendria ningun efecto
+   * real si su contenido siguiera siendo legible aqui por cualquiera. `DELETED`
+   * no necesita filtro -es borrado fisico (HU-41.9), la fila ya no existe-.
+   */
   async listByProduct(
     productId: ProductId,
     page: ListProductCommentsPage,
@@ -81,6 +87,7 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
       .selectFrom('product_comments')
       .selectAll()
       .where('product_id', '=', productId.value)
+      .where('moderation_status', '!=', 'HIDDEN')
       .orderBy('created_at', 'desc')
       .orderBy('id', 'desc')
       .limit(page.limit)
@@ -91,6 +98,7 @@ export class PostgresProductCommentRepository implements ProductCommentRepositor
       .selectFrom('product_comments')
       .select((eb) => eb.fn.countAll().as('total'))
       .where('product_id', '=', productId.value)
+      .where('moderation_status', '!=', 'HIDDEN')
       .executeTakeFirstOrThrow()
 
     return {

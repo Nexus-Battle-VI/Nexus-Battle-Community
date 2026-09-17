@@ -22,6 +22,7 @@ import {
   Rating,
 } from '../../src/domain/value-objects/product-review-values'
 import { DuplicateProductReviewError } from '../../src/application/errors/ApplicationError'
+import { ModerationAction } from '../../src/domain/value-objects/moderation-values'
 
 /**
  * Adaptadores de HU-40 sobre PostgreSQL, contra un motor REAL en contenedor.
@@ -145,6 +146,20 @@ describe('Persistencia de comentarios y calificaciones de producto', () => {
 
       expect(page.total).toBe(1)
       expect(page.items[0]?.productId.value).toBe(producto.value)
+    })
+
+    it('no lista un comentario OCULTO por moderacion: el listado es publico', async () => {
+      const producto = nextProductId()
+      const visible = buildComment(producto)
+      const oculto = buildComment(producto)
+      oculto.moderate({ action: ModerationAction.Hide })
+      await comments.save(visible)
+      await comments.save(oculto)
+
+      const page = await comments.listByProduct(producto, { limit: 20, offset: 0 })
+
+      expect(page.total).toBe(1)
+      expect(page.items[0]?.id.value).toBe(visible.id.value)
     })
 
     describe('Las restricciones viven en el motor, no solo en el codigo', () => {

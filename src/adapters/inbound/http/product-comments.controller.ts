@@ -11,6 +11,7 @@ import {
   Param,
   Post,
   Query,
+  ServiceUnavailableException,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 
@@ -19,6 +20,7 @@ import {
   DuplicateProductReviewError,
   ProductNotFoundError,
 } from '../../../application/errors/ApplicationError'
+import { CatalogUnavailableError } from '../../../application/ports/ProductExistencePort'
 import type {
   ListProductComments,
   PublishProductComment,
@@ -73,6 +75,7 @@ export class ProductCommentsController {
   @ApiResponse({ status: 201, description: 'Comentario publicado' })
   @ApiResponse({ status: 400, description: 'Datos invalidos' })
   @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 503, description: 'Catalog no respondio' })
   async publish(
     @Param('productId') productId: string,
     @Body() body: PublishProductCommentRequest,
@@ -113,6 +116,7 @@ export class ProductCommentsController {
   @ApiResponse({ status: 400, description: 'Datos invalidos' })
   @ApiResponse({ status: 404, description: 'El producto no existe' })
   @ApiResponse({ status: 409, description: 'Ya existe una calificacion de este jugador' })
+  @ApiResponse({ status: 503, description: 'Catalog no respondio' })
   async rate(
     @Param('productId') productId: string,
     @Body() body: RateProductRequest,
@@ -147,6 +151,12 @@ export class ProductCommentsController {
     // entrada mal formada (400).
     if (error instanceof DuplicateProductReviewError) {
       return new ConflictException(error.message)
+    }
+
+    if (error instanceof CatalogUnavailableError) {
+      return new ServiceUnavailableException(
+        'La informacion del producto no esta disponible en este momento. Intentelo de nuevo mas tarde.',
+      )
     }
 
     if (error instanceof DomainError) {
